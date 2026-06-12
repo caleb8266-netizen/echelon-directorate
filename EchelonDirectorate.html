@@ -1,0 +1,1240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="E.D. Archive"/>
+  <meta name="theme-color" content="#07090b"/>
+  <title>The Echelon Directorate</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #07090b; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react" data-type="module">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DESIGN TOKENS
+// ─────────────────────────────────────────────────────────────────────────────
+const C = {
+  bg:          "#07090b",
+  panel:       "#0a0e12",
+  border:      "#1a2830",
+  borderBright:"#2a3f50",
+  blue:        "#4fc3f7",
+  blueDim:     "#1a7fa8",
+  blueFaint:   "#061520",
+  amber:       "#e8a020",
+  red:         "#cc3333",
+  grey:        "#4a6070",
+  greyLight:   "#7a9aaa",
+  white:       "#d0e8f0",
+  silver:      "#8aaabb",
+  muted:       "#3a5565",
+  green:       "#50aa60",
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GLOBAL CSS
+// ─────────────────────────────────────────────────────────────────────────────
+const globalCSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Share+Tech+Mono&family=Special+Elite&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html {
+    height: -webkit-fill-available;
+    overflow: hidden;
+  }
+  body {
+    background: ${C.bg};
+    color: ${C.white};
+    font-family: 'Share Tech Mono', monospace;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    height: 100vh;
+    height: -webkit-fill-available;
+    overflow: hidden;
+  }
+  #root {
+    height: 100vh;
+    height: -webkit-fill-available;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  input, textarea, button, select { font-family: 'Share Tech Mono', monospace; }
+  textarea { -webkit-overflow-scrolling: touch; }
+  ::-webkit-scrollbar { display: none; }
+  * { scrollbar-width: none; }
+  @keyframes blink   { 0%,100%{opacity:1} 50%{opacity:0} }
+  @keyframes fadeUp  { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes fadeIn  { from{opacity:0} to{opacity:1} }
+  @keyframes slideUp { from{opacity:0;transform:translateY(100%)} to{opacity:1;transform:translateY(0)} }
+  @keyframes slideDown { from{opacity:0;transform:translateY(-20px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes flicker { 0%,100%{opacity:1} 93%{opacity:.88} 94%{opacity:1} }
+`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
+const BOOT_LINES = [
+  "ECHELON DIRECTORATE v7.1.1",
+  "▸ Mounting archive... [OK]",
+  "▸ Access granted.",
+  "",
+  "  WELCOME BACK, ANALYST.",
+];
+
+const GENRES = [
+  "ACTION","ADVENTURE","COMEDY","CRIME","DRAMA","ESPIONAGE",
+  "FANTASY","HISTORICAL","HORROR","MYSTERY","NOIR","ROMANCE",
+  "SCI-FI","THRILLER","WESTERN","CUSTOM",
+];
+
+const STATUSES     = ["ACTIVE OP","ON ICE","COMPLETE","CLASSIFIED"];
+const STATUS_COLORS = {
+  "ACTIVE OP": C.blue, "ON ICE": C.greyLight,
+  "COMPLETE":  C.green, "CLASSIFIED": "#9b59b6",
+};
+
+const PHOTO_FILTERS = [
+  { id:"classified",   label:"CLASSIFIED",  desc:"Black & white with grain", css:"grayscale(100%) contrast(1.15) brightness(0.85)" },
+  { id:"sepia",        label:"ARCHIVE",     desc:"Aged sepia document",      css:"sepia(90%) contrast(1.1) brightness(0.9) saturate(0.8)" },
+  { id:"surveillance", label:"SURVEILLANCE",desc:"High contrast dark scan",  css:"grayscale(100%) contrast(1.4) brightness(0.7)" },
+];
+
+const STAMP = {
+  classified:   { color: C.red,     label:"CLASSIFIED" },
+  sepia:        { color:"#8B6914",  label:"ARCHIVED"   },
+  surveillance: { color:"#3a7a3a",  label:"SURV."      },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STORAGE
+// ─────────────────────────────────────────────────────────────────────────────
+const SK = { stories:"ed_stories_v5" };
+
+function loadFromStorage(key, fallback) {
+  try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : fallback; }
+  catch { return fallback; }
+}
+function saveToStorage(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); }
+  catch (e) { console.warn("Storage full — consider removing images.", e); }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IMAGE COMPRESSION  (iPhone photos → ~200KB)
+// ─────────────────────────────────────────────────────────────────────────────
+function compressImage(file, maxWidth = 900, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload  = ({ target: { result } }) => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload  = () => {
+        const scale  = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width  = Math.round(img.width  * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function formatDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso), diff = Date.now() - d;
+  if (diff < 60000)     return "just now";
+  if (diff < 3600000)   return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000)  return d.toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit" });
+  if (diff < 604800000) return d.toLocaleDateString("en-US", { weekday:"short" });
+  return d.toLocaleDateString("en-US", { month:"short", day:"numeric" });
+}
+
+function useTypewriter(lines, delay = 14, startDelay = 0) {
+  const [displayed, setDisplayed] = useState([]);
+  const [done,      setDone]      = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await sleep(startDelay);
+      const out = [];
+      for (const line of lines) {
+        if (cancelled) return;
+        out.push(""); setDisplayed([...out]);
+        for (let c = 0; c < line.length; c++) {
+          if (cancelled) return;
+          out[out.length - 1] = line.slice(0, c + 1);
+          setDisplayed([...out]);
+          await sleep(delay);
+        }
+        await sleep(50);
+      }
+      if (!cancelled) setDone(true);
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return { displayed, done };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEFAULT DATA
+// ─────────────────────────────────────────────────────────────────────────────
+const DEFAULTS = [
+  {
+    id:1, title:"The Lisbon Cipher", genre:"ESPIONAGE", status:"ACTIVE OP",
+    logline:"A burned CIA analyst discovers breadcrumbs hidden inside Baroque paintings.",
+    coverImage:null, coverFilter:"classified",
+    content:"",
+    sections:[
+      { id:"s1", title:"KEY THEMES",    content:"Identity, betrayal, the weight of secrets." },
+      { id:"s2", title:"OPENING SCENE", content:"Graveside in Lisbon. Rain. She doesn't cry — that's the tell." },
+      { id:"s3", title:"CHARACTERS",    content:"— Ana Voss: burned CIA analyst, sharp, guarded\n— Vasek: her dead handler, secrets everywhere" },
+      { id:"s4", title:"RESEARCH",      content:"Lisbon's Alfama district. Flemish paintings and microdots." },
+      { id:"s5", title:"PLOT NOTES",    content:"" },
+    ],
+    chapters:[
+      { id:1, title:"Ch 1 — The Funeral",  done:true,  content:"" },
+      { id:2, title:"Ch 2 — The Painting", done:true,  content:"" },
+      { id:3, title:"Ch 3 — East Berlin",  done:false, content:"" },
+      { id:4, title:"Ch 4 — The Double",   done:false, content:"" },
+    ],
+    evidence:[], updatedAt:new Date().toISOString(),
+  },
+  {
+    id:2, title:"Station Ghost", genre:"COLD WAR", status:"ON ICE",
+    logline:"A KGB sleeper wakes in 1989 to find the Wall has fallen and his mission no longer exists.",
+    coverImage:null, coverFilter:"sepia",
+    content:"",
+    sections:[
+      { id:"s1", title:"KEY THEMES",    content:"Identity without purpose. Loyalty to a country that no longer exists." },
+      { id:"s2", title:"OPENING SCENE", content:"The phone rings. Wrong number. That's the signal. 11 years waiting." },
+      { id:"s3", title:"CHARACTERS",    content:"" },
+      { id:"s4", title:"RESEARCH",      content:"Operation RYAN. KGB illegals program. Berlin 1989." },
+      { id:"s5", title:"PLOT NOTES",    content:"" },
+    ],
+    chapters:[
+      { id:1, title:"Prologue — Activation",        done:true,  content:"" },
+      { id:2, title:"Pt 1 — Wrong Side of History", done:false, content:"" },
+    ],
+    evidence:[], updatedAt:new Date(Date.now()-86400000*3).toISOString(),
+  },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED UI
+// ─────────────────────────────────────────────────────────────────────────────
+function EDLogo({ size=32, color=C.silver, glow=false }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 200 220" fill="none"
+      style={{ filter:glow?`drop-shadow(0 0 8px ${color})`:`drop-shadow(0 0 2px ${color}55)`, flexShrink:0 }}>
+      <polygon points="100,18 68,72 30,58 55,90 18,86 48,104"             fill={color} opacity="0.75"/>
+      <polygon points="100,18 132,72 170,58 145,90 182,86 152,104"        fill={color} opacity="0.75"/>
+      <polygon points="100,5 108,55 100,65 92,55"                         fill={color}/>
+      <polygon points="92,60 108,60 118,90 112,125 100,145 88,125 82,90"  fill={color} opacity="0.9"/>
+      <line x1="100" y1="65" x2="90"  y2="95" stroke={C.bg} strokeWidth="2.5"/>
+      <line x1="100" y1="65" x2="110" y2="95" stroke={C.bg} strokeWidth="2.5"/>
+      <polygon points="95,125 105,125 102,155 100,165 98,155"             fill={color}/>
+      <circle cx="100" cy="95" r="72" stroke={color} strokeWidth="0.8" opacity="0.15" fill="none"/>
+    </svg>
+  );
+}
+
+function FieldLabel({ children }) {
+  return <div style={{ fontSize:9, color:C.grey, letterSpacing:"0.18em", marginBottom:6 }}>{children}</div>;
+}
+
+function PillBtn({ active, onClick, color, children }) {
+  const col = color || C.blue;
+  return (
+    <button onClick={onClick} style={{
+      background:  active ? `${col}22` : "transparent",
+      border:      `1px solid ${active ? col : C.border}`,
+      color:       active ? col : C.grey,
+      fontSize:9, letterSpacing:"0.1em",
+      padding:"5px 13px", borderRadius:20,
+      cursor:"pointer", whiteSpace:"nowrap", flexShrink:0,
+    }}>
+      {children}
+    </button>
+  );
+}
+
+function ScanlineOverlay() {
+  return (
+    <div style={{ position:"absolute", inset:0, pointerEvents:"none",
+      background:"repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.13) 2px,rgba(0,0,0,0.13) 4px)" }}/>
+  );
+}
+
+function PhotoStamp({ filter }) {
+  const { color, label } = STAMP[filter] || STAMP.classified;
+  return (
+    <div style={{ position:"absolute", bottom:8, right:8, fontFamily:"'Rajdhani',sans-serif", fontWeight:700, fontSize:9, letterSpacing:"0.25em", color, border:`1.5px solid ${color}`, padding:"2px 7px", transform:"rotate(-4deg)", background:"rgba(0,0,0,0.55)", textShadow:`0 0 6px ${color}`, pointerEvents:"none" }}>
+      {label}
+    </div>
+  );
+}
+
+function CIAImage({ src, filter="classified", height=140, showStamp=true, style:sx={} }) {
+  const css = PHOTO_FILTERS.find(f=>f.id===filter)?.css || PHOTO_FILTERS[0].css;
+  return (
+    <div style={{ position:"relative", overflow:"hidden", ...sx }}>
+      <img src={src} alt="" style={{ width:"100%", height, objectFit:"cover", filter:css, display:"block" }}/>
+      {filter==="surveillance" && <ScanlineOverlay/>}
+      {showStamp && <PhotoStamp filter={filter}/>}
+    </div>
+  );
+}
+
+function BottomSheet({ onClose, title, children }) {
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:200, display:"flex", flexDirection:"column", justifyContent:"flex-end", animation:"fadeIn 0.15s ease both" }}
+      onClick={e => e.target===e.currentTarget && onClose()}>
+      <div style={{ background:C.panel, borderTop:`1px solid ${C.borderBright}`, borderRadius:"18px 18px 0 0", maxHeight:"90vh", overflowY:"auto", animation:"slideUp 0.25s ease both" }}>
+        <div style={{ display:"flex", justifyContent:"center", padding:"10px 0 2px" }}>
+          <div style={{ width:36, height:3, background:C.border, borderRadius:2 }}/>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 20px 14px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <EDLogo size={20} color={C.silver}/>
+            <span style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:14, fontWeight:700, letterSpacing:"0.25em", color:C.blue }}>{title}</span>
+          </div>
+          <button onClick={onClose} style={{ background:"transparent", border:"none", color:C.grey, fontSize:24, cursor:"pointer", lineHeight:1, padding:"0 2px" }}>✕</button>
+        </div>
+        <div style={{ padding:"0 20px 44px" }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOOT SEQUENCE
+// ─────────────────────────────────────────────────────────────────────────────
+function BootSequence({ onComplete }) {
+  const { displayed, done } = useTypewriter(BOOT_LINES, 12, 100);
+  const [progress, setProgress] = useState(0);
+  const [entering, setEntering] = useState(false);
+
+  useEffect(() => {
+    if (!done) return;
+    let p = 0;
+    const iv = setInterval(() => {
+      p += 5; setProgress(Math.min(p, 100));
+      if (p >= 100) { clearInterval(iv); setEntering(true); setTimeout(onComplete, 350); }
+    }, 8);
+    return () => clearInterval(iv);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done]);
+
+  return (
+    <div style={{ height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:32, animation:"flicker 8s infinite" }}>
+      <EDLogo size={60} color={C.silver} glow/>
+      <h1 style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:20, fontWeight:700, letterSpacing:"0.45em", color:C.amber, marginTop:14, marginBottom:4, textAlign:"center" }}>
+        THE ECHELON DIRECTORATE
+      </h1>
+      <p style={{ fontSize:8, color:C.grey, letterSpacing:"0.35em", marginBottom:30, textAlign:"center" }}>
+        PRESERVE // CONTROL // ASCEND
+      </p>
+      <div style={{ width:"100%", maxWidth:360, background:C.panel, border:`1px solid ${C.borderBright}`, borderRadius:8, overflow:"hidden" }}>
+        <div style={{ background:C.blueFaint, borderBottom:`1px solid ${C.border}`, padding:"6px 14px", display:"flex", alignItems:"center", gap:6, fontSize:9, color:C.grey, letterSpacing:"0.1em" }}>
+          <span style={{ color:C.red }}>●</span>
+          <span style={{ color:C.amber }}>●</span>
+          <span style={{ color:C.blue }}>●</span>
+          <span style={{ flex:1, textAlign:"center" }}>SECURE TERMINAL</span>
+        </div>
+        <div style={{ padding:"18px 20px", minHeight:100, fontSize:12, lineHeight:2 }}>
+          {displayed.map((line,i) => (
+            <div key={i} style={{
+              color:         line.startsWith("  WELCOME") ? C.white : line.startsWith("▸") ? C.blue : C.greyLight,
+              fontFamily:    line.startsWith("  ") ? "'Rajdhani',sans-serif" : "'Share Tech Mono',monospace",
+              fontWeight:    line.startsWith("  ") ? 600 : 400,
+              fontSize:      line.startsWith("  ") ? 15 : 12,
+              letterSpacing: line.startsWith("  ") ? "0.2em" : "0.04em",
+            }}>
+              {line || "\u00a0"}
+            </div>
+          ))}
+          {!done && <span style={{ animation:"blink 1s infinite", color:C.blue }}>█</span>}
+        </div>
+        {done && (
+          <div style={{ padding:"0 20px 16px" }}>
+            <div style={{ height:2, background:C.blueFaint, borderRadius:1, overflow:"hidden" }}>
+              <div style={{ height:"100%", width:`${progress}%`, background:`linear-gradient(90deg,${C.blueDim},${C.blue})`, transition:"width 0.02s" }}/>
+            </div>
+          </div>
+        )}
+      </div>
+      {entering && (
+        <p style={{ marginTop:16, fontSize:9, letterSpacing:"0.3em", color:C.amber, animation:"blink 0.4s infinite", fontFamily:"'Rajdhani',sans-serif" }}>
+          ► ENTERING ARCHIVE
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FILTER PICKER SHEET
+// ─────────────────────────────────────────────────────────────────────────────
+function FilterPickerSheet({ src, onConfirm, onClose }) {
+  const [selected, setSelected] = useState("classified");
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", zIndex:300, display:"flex", flexDirection:"column", justifyContent:"flex-end", animation:"fadeIn 0.15s ease both" }}>
+      <div style={{ background:C.panel, borderTop:`1px solid ${C.borderBright}`, borderRadius:"18px 18px 0 0", animation:"slideUp 0.25s ease both" }}>
+        <div style={{ display:"flex", justifyContent:"center", padding:"10px 0 2px" }}>
+          <div style={{ width:36, height:3, background:C.border, borderRadius:2 }}/>
+        </div>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 20px 14px" }}>
+          <span style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:14, fontWeight:700, letterSpacing:"0.25em", color:C.blue }}>CHOOSE FILTER</span>
+          <button onClick={onClose} style={{ background:"transparent", border:"none", color:C.grey, fontSize:24, cursor:"pointer" }}>✕</button>
+        </div>
+        <div style={{ padding:"0 20px 10px" }}>
+          <CIAImage src={src} filter={selected} height={160} showStamp style={{ borderRadius:6 }}/>
+        </div>
+        <div style={{ padding:"0 20px", display:"flex", flexDirection:"column", gap:8 }}>
+          {PHOTO_FILTERS.map(f => (
+            <button key={f.id} onClick={() => setSelected(f.id)}
+              style={{ display:"flex", alignItems:"center", gap:12, background:selected===f.id?"rgba(79,195,247,0.08)":"rgba(255,255,255,0.03)", border:`1px solid ${selected===f.id?C.blue:C.border}`, borderRadius:10, padding:"10px 14px", cursor:"pointer", textAlign:"left" }}>
+              <img src={src} alt="" style={{ width:52, height:38, objectFit:"cover", filter:f.css, borderRadius:4, flexShrink:0 }}/>
+              <div style={{ flex:1 }}>
+                <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:13, fontWeight:700, color:selected===f.id?C.blue:C.white, letterSpacing:"0.15em" }}>{f.label}</div>
+                <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>{f.desc}</div>
+              </div>
+              {selected===f.id && <span style={{ color:C.blue, fontSize:18 }}>✓</span>}
+            </button>
+          ))}
+        </div>
+        <div style={{ padding:"14px 20px 44px" }}>
+          <button onClick={() => onConfirm(selected)}
+            style={{ width:"100%", background:C.blue, border:"none", borderRadius:10, padding:"14px", color:C.bg, fontFamily:"'Rajdhani',sans-serif", fontSize:14, fontWeight:700, letterSpacing:"0.2em", cursor:"pointer" }}>
+            ATTACH PHOTO
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEFAULT SECTIONS — defined here so NewDossierSheet and DossierDetail can use it
+// ─────────────────────────────────────────────────────────────────────────────
+const DEFAULT_SECTIONS = [
+  { id:"s1", title:"KEY THEMES",    content:"" },
+  { id:"s2", title:"OPENING SCENE", content:"" },
+  { id:"s3", title:"CHARACTERS",    content:"" },
+  { id:"s4", title:"RESEARCH",      content:"" },
+  { id:"s5", title:"PLOT NOTES",    content:"" },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW DOSSIER SHEET
+// ─────────────────────────────────────────────────────────────────────────────
+function NewDossierSheet({ onSave, onClose }) {
+  const [title,   setTitle]   = useState("");
+  const [genre,   setGenre]   = useState("THRILLER");
+  const [status,  setStatus]  = useState("ACTIVE OP");
+  const [logline, setLogline] = useState("");
+
+  const handleSave = () => {
+    if (!title.trim()) return;
+    onSave({ title:title.trim(), genre, status, logline, coverImage:null, coverFilter:"classified", content:"", sections:DEFAULT_SECTIONS.map(s=>({...s})), chapters:[], evidence:[], updatedAt:new Date().toISOString() });
+    onClose();
+  };
+
+  return (
+    <BottomSheet title="NEW DOSSIER" onClose={onClose}>
+      <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
+        <div>
+          <FieldLabel>TITLE</FieldLabel>
+          <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Give your story a name..." autoFocus
+            onKeyDown={e=>e.key==="Enter"&&handleSave()}
+            style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:`1px solid ${C.border}`, borderRadius:8, padding:"12px 14px", color:C.white, fontFamily:"'Special Elite',serif", fontSize:18, outline:"none" }}/>
+        </div>
+        <div>
+          <FieldLabel>ONE LINE SUMMARY (optional)</FieldLabel>
+          <input value={logline} onChange={e=>setLogline(e.target.value)} placeholder="What is this story about?"
+            style={{ width:"100%", background:"rgba(255,255,255,0.04)", border:`1px solid ${C.border}`, borderRadius:8, padding:"11px 14px", color:C.greyLight, fontSize:12, outline:"none" }}/>
+        </div>
+        <div>
+          <FieldLabel>STATUS</FieldLabel>
+          <div style={{ display:"flex", gap:7, flexWrap:"wrap", marginTop:4 }}>
+            {STATUSES.map(s=><PillBtn key={s} active={status===s} onClick={()=>setStatus(s)} color={STATUS_COLORS[s]}>{s}</PillBtn>)}
+          </div>
+        </div>
+        <div>
+          <FieldLabel>GENRE</FieldLabel>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginTop:4, maxHeight:120, overflowY:"auto" }}>
+            {GENRES.map(g=><PillBtn key={g} active={genre===g} onClick={()=>setGenre(g)}>{g}</PillBtn>)}
+          </div>
+        </div>
+        <button onClick={handleSave}
+          style={{ width:"100%", background:C.blue, border:"none", borderRadius:10, padding:"14px", color:C.bg, fontFamily:"'Rajdhani',sans-serif", fontSize:14, fontWeight:700, letterSpacing:"0.2em", cursor:"pointer", marginTop:4 }}>
+          CREATE DOSSIER
+        </button>
+      </div>
+    </BottomSheet>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOSSIER LIST
+// ─────────────────────────────────────────────────────────────────────────────
+function DossierList({ stories, onOpen, onNew, onDelete }) {
+  const [search,       setSearch]       = useState("");
+  const [filterStatus, setFilterStatus] = useState("ALL");
+
+  const filtered = stories.filter(s => {
+    const matchText   = (s.title+(s.logline||"")).toLowerCase().includes(search.toLowerCase());
+    const matchStatus = filterStatus==="ALL" || s.status===filterStatus;
+    return matchText && matchStatus;
+  });
+
+  return (
+    <div style={{ height:"100%", display:"flex", flexDirection:"column", background:C.bg }}>
+
+      {/* Header */}
+      <div style={{ background:C.panel, borderBottom:`1px solid ${C.border}`, padding:"14px 18px 12px", paddingTop:"max(14px,env(safe-area-inset-top,14px))" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:12 }}>
+          <EDLogo size={28} color={C.silver} glow/>
+          <div>
+            <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:16, fontWeight:700, letterSpacing:"0.35em", color:C.amber }}>ECHELON DIRECTORATE</div>
+            <div style={{ fontSize:8, color:C.grey, letterSpacing:"0.2em", marginTop:1 }}>STORY ARCHIVE</div>
+          </div>
+          <div style={{ flex:1 }}/>
+          <button onClick={onNew}
+            style={{ background:C.blue, border:"none", borderRadius:10, width:38, height:38, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", fontSize:24, color:C.bg, lineHeight:1, flexShrink:0 }}>
+            +
+          </button>
+        </div>
+        <div style={{ position:"relative", marginBottom:10 }}>
+          <span style={{ position:"absolute", left:11, top:"50%", transform:"translateY(-50%)", fontSize:13, color:C.muted, pointerEvents:"none" }}>🔍</span>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search dossiers..."
+            style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:`1px solid ${C.border}`, borderRadius:8, padding:"9px 10px 9px 32px", color:C.white, fontSize:12, outline:"none" }}/>
+        </div>
+        <div style={{ display:"flex", gap:6, overflowX:"auto", paddingBottom:2 }}>
+          {["ALL",...STATUSES].map(s=>(
+            <PillBtn key={s} active={filterStatus===s} onClick={()=>setFilterStatus(s)} color={STATUS_COLORS[s]||C.blue}>{s}</PillBtn>
+          ))}
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div style={{ display:"flex", background:C.panel, borderBottom:`1px solid ${C.border}` }}>
+        {[
+          { label:"DOSSIERS", val:stories.length,                                       color:C.white },
+          { label:"ACTIVE",   val:stories.filter(s=>s.status==="ACTIVE OP").length,     color:C.blue  },
+          { label:"COMPLETE", val:stories.filter(s=>s.status==="COMPLETE").length,      color:C.green },
+        ].map((s,i)=>(
+          <div key={i} style={{ flex:1, padding:"8px 0", textAlign:"center", borderRight:i<2?`1px solid ${C.border}`:"none" }}>
+            <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:22, fontWeight:700, color:s.color, lineHeight:1 }}>{s.val}</div>
+            <div style={{ fontSize:7, color:C.muted, letterSpacing:"0.15em", marginTop:3 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* List */}
+      <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch" }}>
+        {filtered.length===0 && (
+          <p style={{ padding:40, textAlign:"center", color:C.muted, fontSize:13, fontStyle:"italic" }}>
+            {search ? "No dossiers match your search." : "No dossiers yet. Tap + to create one."}
+          </p>
+        )}
+        {filtered.map((s,idx) => {
+          const statusColor = STATUS_COLORS[s.status]||C.grey;
+          const chapDone    = s.chapters?.filter(c=>c.done).length||0;
+          const chapTotal   = s.chapters?.length||0;
+          const wordCount   = (s.content||"").split(/\s+/).filter(Boolean).length;
+          const filterCSS   = PHOTO_FILTERS.find(f=>f.id===s.coverFilter)?.css||PHOTO_FILTERS[0].css;
+          return (
+            <div key={s.id} onClick={()=>onOpen(s.id)}
+              style={{ borderBottom:`1px solid ${C.border}`, cursor:"pointer", animation:`fadeUp 0.2s ease ${idx*0.04}s both`, overflow:"hidden" }}>
+              {s.coverImage && (
+                <div style={{ position:"relative", height:150, overflow:"hidden" }}>
+                  <img src={s.coverImage} alt="Cover" style={{ width:"100%", height:"100%", objectFit:"cover", filter:filterCSS, display:"block" }}/>
+                  {s.coverFilter==="surveillance" && <ScanlineOverlay/>}
+                  <PhotoStamp filter={s.coverFilter}/>
+                  <div style={{ position:"absolute", bottom:0, left:0, right:0, height:50, background:"linear-gradient(transparent,rgba(7,9,11,0.95))" }}/>
+                </div>
+              )}
+              <div style={{ padding:"12px 18px", display:"flex", alignItems:"flex-start", gap:10 }}>
+                <div style={{ width:3, alignSelf:"stretch", background:statusColor, borderRadius:2, flexShrink:0, opacity:0.75, marginTop:3 }}/>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", gap:8 }}>
+                    <span style={{ fontFamily:"'Special Elite',serif", fontSize:17, color:C.white, lineHeight:1.3, flex:1 }}>{s.title}</span>
+                    <span style={{ fontSize:9, color:C.muted, flexShrink:0, marginTop:2 }}>{formatDate(s.updatedAt)}</span>
+                  </div>
+                  {s.logline && (
+                    <p style={{ fontSize:11, color:C.muted, marginTop:4, lineHeight:1.45, fontStyle:"italic", overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", margin:"4px 0 0" }}>
+                      "{s.logline}"
+                    </p>
+                  )}
+                  <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:7, flexWrap:"wrap" }}>
+                    {!s.coverImage && <span style={{ fontSize:8, color:statusColor, letterSpacing:"0.12em", fontFamily:"'Rajdhani',sans-serif", fontWeight:600 }}>{s.status}</span>}
+                    <span style={{ fontSize:8, color:C.muted }}>·</span>
+                    <span style={{ fontSize:8, color:C.muted }}>{s.genre}</span>
+                    {wordCount>0 && <><span style={{ fontSize:8, color:C.muted }}>·</span><span style={{ fontSize:8, color:C.muted }}>{wordCount}w</span></>}
+                    {(s.evidence||[]).length>0 && <><span style={{ fontSize:8, color:C.muted }}>·</span><span style={{ fontSize:8, color:C.amber }}>📎 {s.evidence.length}</span></>}
+                  </div>
+                  {chapTotal>0 && (
+                    <div style={{ height:2, background:C.blueFaint, borderRadius:1, overflow:"hidden", marginTop:8 }}>
+                      <div style={{ height:"100%", width:`${(chapDone/chapTotal)*100}%`, background:`linear-gradient(90deg,${C.blueDim},${C.blue})` }}/>
+                    </div>
+                  )}
+                </div>
+                <span style={{ color:C.muted, fontSize:18, alignSelf:"center", flexShrink:0 }}>›</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      <div style={{ background:C.panel, borderTop:`1px solid ${C.border}`, padding:"5px 16px", paddingBottom:"max(5px,env(safe-area-inset-bottom,5px))", display:"flex", justifyContent:"space-between", fontSize:7, color:C.muted, letterSpacing:"0.1em" }}>
+        <span>E.D. ARCHIVE // FOR THE CONTINUITY. FOR THE ECHELON.</span>
+        <span style={{ animation:"blink 3s infinite", color:C.blueDim }}>● SECURE</span>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHAPTERS PANEL (bottom sheet inside dossier)
+// ─────────────────────────────────────────────────────────────────────────────
+function ChaptersSheet({ story, onUpdate, onClose }) {
+  const [adding,    setAdding]    = useState(false);
+  const [newTitle,  setNewTitle]  = useState("");
+  const [activeChapter, setActiveChapter] = useState(null);
+  const chapCounter = useRef(Date.now());
+
+  const chapDone  = story.chapters?.filter(c=>c.done).length||0;
+  const chapTotal = story.chapters?.length||0;
+
+  const addChapter = () => {
+    if (!newTitle.trim()) return;
+    onUpdate({ chapters:[...(story.chapters||[]), { id:chapCounter.current++, title:newTitle.trim(), done:false, content:"" }] });
+    setNewTitle(""); setAdding(false);
+  };
+  const toggleChapter = id => onUpdate({ chapters:story.chapters.map(c=>c.id===id?{...c,done:!c.done}:c) });
+  const deleteChapter = id => onUpdate({ chapters:story.chapters.filter(c=>c.id!==id) });
+  const saveChapter   = updated => { onUpdate({ chapters:story.chapters.map(c=>c.id===updated.id?updated:c) }); setActiveChapter(null); };
+
+  if (activeChapter) {
+    return (
+      <div style={{ position:"fixed", inset:0, background:C.bg, zIndex:300, display:"flex", flexDirection:"column", animation:"fadeIn 0.2s ease both" }}>
+        <div style={{ background:C.panel, borderBottom:`1px solid ${C.border}`, padding:"12px 18px", paddingTop:"max(12px,env(safe-area-inset-top,12px))", display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+          <button onClick={()=>{ saveChapter(activeChapter); }}
+            style={{ background:"transparent", border:"none", color:C.blue, fontSize:13, cursor:"pointer", letterSpacing:"0.1em", padding:0, flexShrink:0 }}>
+            ‹ BACK
+          </button>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontFamily:"'Special Elite',serif", fontSize:14, color:C.white, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{activeChapter.title}</div>
+            <div style={{ fontSize:8, color:C.muted, letterSpacing:"0.1em", marginTop:2 }}>{activeChapter.done ? "✓ COMPLETE" : "IN PROGRESS"}</div>
+          </div>
+          <button onClick={()=>{ const updated={...activeChapter,done:!activeChapter.done}; setActiveChapter(updated); onUpdate({ chapters:story.chapters.map(c=>c.id===updated.id?updated:c) }); }}
+            style={{ background:activeChapter.done?"rgba(80,170,96,0.15)":"transparent", border:`1px solid ${activeChapter.done?C.green:C.border}`, borderRadius:8, padding:"5px 10px", color:activeChapter.done?C.green:C.grey, fontSize:9, letterSpacing:"0.12em", cursor:"pointer", flexShrink:0 }}>
+            {activeChapter.done ? "✓ DONE" : "MARK DONE"}
+          </button>
+        </div>
+        <textarea
+          value={activeChapter.content||""}
+          onChange={e=>setActiveChapter({...activeChapter,content:e.target.value})}
+          autoFocus
+          placeholder={`Write notes for "${activeChapter.title}" here...\n\nScene ideas, dialogue, character beats, research — anything that belongs in this chapter.`}
+          style={{ flex:1, width:"100%", background:"transparent", border:"none", resize:"none", color:C.white, fontFamily:"'Special Elite',serif", fontSize:16, lineHeight:1.95, padding:"22px 22px", outline:"none", overflowY:"scroll", WebkitOverflowScrolling:"touch", paddingBottom:"max(30px,env(safe-area-inset-bottom,30px))" }}
+        />
+        <div style={{ background:C.panel, borderTop:`1px solid ${C.border}`, padding:"6px 18px", paddingBottom:"max(6px,env(safe-area-inset-bottom,6px))", fontSize:9, color:C.muted, textAlign:"right", letterSpacing:"0.1em", flexShrink:0 }}>
+          {(activeChapter.content||"").split(/\s+/).filter(Boolean).length} words
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <BottomSheet title="CHAPTERS" onClose={onClose}>
+      <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+        {chapTotal>0 && (
+          <div>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:C.grey, letterSpacing:"0.12em", marginBottom:6 }}>
+              <span>PROGRESS</span><span>{chapDone}/{chapTotal} COMPLETE</span>
+            </div>
+            <div style={{ height:3, background:C.blueFaint, borderRadius:2, overflow:"hidden" }}>
+              <div style={{ height:"100%", width:`${chapTotal?(chapDone/chapTotal)*100:0}%`, background:`linear-gradient(90deg,${C.blueDim},${C.blue})`, transition:"width 0.3s" }}/>
+            </div>
+          </div>
+        )}
+
+        <button onClick={()=>setAdding(v=>!v)}
+          style={{ background:adding?C.blueFaint:"transparent", border:`1px solid ${adding?C.blue:C.border}`, borderRadius:8, padding:"9px 14px", color:adding?C.blue:C.grey, fontSize:10, letterSpacing:"0.15em", cursor:"pointer" }}>
+          {adding ? "CANCEL" : "+ ADD CHAPTER"}
+        </button>
+
+        {adding && (
+          <div style={{ display:"flex", gap:7, animation:"fadeUp 0.15s ease both" }}>
+            <input value={newTitle} onChange={e=>setNewTitle(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&addChapter()} placeholder="Chapter title..." autoFocus
+              style={{ flex:1, background:"rgba(255,255,255,0.05)", border:`1px solid ${C.blue}`, borderRadius:8, padding:"10px 13px", color:C.white, fontSize:13, outline:"none" }}/>
+            <button onClick={addChapter}
+              style={{ background:C.blue, border:"none", borderRadius:8, padding:"10px 16px", color:C.bg, fontSize:18, fontWeight:700, cursor:"pointer" }}>+</button>
+          </div>
+        )}
+
+        {(story.chapters||[]).length===0 && !adding && (
+          <p style={{ fontSize:11, color:C.muted, fontStyle:"italic", textAlign:"center", padding:"10px 0" }}>No chapters yet. Tap + Add Chapter to create one.</p>
+        )}
+
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          {(story.chapters||[]).map(ch=>(
+            <div key={ch.id} style={{ background:ch.done?"rgba(79,195,247,0.05)":"rgba(255,255,255,0.03)", border:`1px solid ${ch.done?C.blueDim:C.border}`, borderRadius:10, overflow:"hidden" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px" }}>
+                <div onClick={()=>toggleChapter(ch.id)}
+                  style={{ width:18, height:18, border:`2px solid ${ch.done?C.blue:C.muted}`, borderRadius:4, background:ch.done?C.blue:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, cursor:"pointer", transition:"all 0.12s" }}>
+                  {ch.done && <span style={{ color:C.bg, fontSize:10, fontWeight:900 }}>✓</span>}
+                </div>
+                <div onClick={()=>setActiveChapter({...ch})} style={{ flex:1, cursor:"pointer" }}>
+                  <div style={{ fontSize:13, color:ch.done?C.greyLight:C.white, textDecoration:ch.done?"line-through":"none" }}>{ch.title}</div>
+                  <div style={{ fontSize:9, color:C.muted, marginTop:3, letterSpacing:"0.06em", fontStyle:(ch.content?"normal":"italic") }}>
+                    {ch.content ? `${ch.content.split(/\s+/).filter(Boolean).length} words · tap to edit` : "tap to write notes"}
+                  </div>
+                </div>
+                <span onClick={()=>setActiveChapter({...ch})} style={{ color:C.blue, fontSize:16, cursor:"pointer", flexShrink:0 }}>›</span>
+                <button onClick={()=>deleteChapter(ch.id)}
+                  style={{ background:"transparent", border:"none", color:C.muted, cursor:"pointer", fontSize:18, lineHeight:1, padding:"0 0 0 4px" }}>×</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </BottomSheet>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EVIDENCE PANEL (bottom sheet inside dossier)
+// ─────────────────────────────────────────────────────────────────────────────
+function EvidenceSheet({ story, onUpdate, onClose }) {
+  const [filterPicker, setFilterPicker] = useState(null);
+  const [lightbox,     setLightbox]     = useState(null);
+  const [uploading,    setUploading]    = useState(false);
+  const fileInputRef = useRef(null);
+  const evidCounter  = useRef(Date.now()+9000);
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const compressed = await compressImage(file);
+      setFilterPicker({ src:compressed });
+    } catch (e) { console.error(e); }
+    finally { setUploading(false); }
+  };
+
+  const handleFilterConfirm = (filter) => {
+    const ev = { id:evidCounter.current++, src:filterPicker.src, filter, caption:"", addedAt:new Date().toISOString() };
+    onUpdate({ evidence:[...(story.evidence||[]), ev] });
+    setFilterPicker(null);
+  };
+
+  const updateCaption  = (id,cap) => onUpdate({ evidence:story.evidence.map(e=>e.id===id?{...e,caption:cap}:e) });
+  const deleteEvidence = (id)     => { onUpdate({ evidence:story.evidence.filter(e=>e.id!==id) }); setLightbox(null); };
+
+  return (
+    <>
+      <input ref={fileInputRef} type="file" accept="image/*" onChange={e=>{handleFile(e.target.files[0]);e.target.value="";}} style={{ display:"none" }}/>
+      {filterPicker && <FilterPickerSheet src={filterPicker.src} onConfirm={handleFilterConfirm} onClose={()=>setFilterPicker(null)}/>}
+      {uploading && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <span style={{ color:C.blue, fontFamily:"'Rajdhani',sans-serif", fontSize:14, letterSpacing:"0.3em", animation:"blink 1s infinite" }}>PROCESSING...</span>
+        </div>
+      )}
+
+      {lightbox && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.97)", zIndex:400, display:"flex", flexDirection:"column", animation:"fadeIn 0.15s ease both" }}>
+          <div style={{ padding:"16px 18px", paddingTop:"max(16px,env(safe-area-inset-top,16px))", display:"flex", justifyContent:"flex-end" }}>
+            <button onClick={()=>setLightbox(null)} style={{ background:"transparent", border:"none", color:C.white, fontSize:30, cursor:"pointer", lineHeight:1 }}>✕</button>
+          </div>
+          <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 20px", overflowY:"auto" }}>
+            <div style={{ width:"100%", maxWidth:500 }}>
+              <CIAImage src={lightbox.src} filter={lightbox.filter} height={260} showStamp style={{ borderRadius:6, marginBottom:12 }}/>
+            </div>
+          </div>
+          <div style={{ padding:"12px 20px", paddingBottom:"max(12px,env(safe-area-inset-bottom,12px))", display:"flex", flexDirection:"column", gap:8 }}>
+            <input value={lightbox.caption||""} onChange={e=>{updateCaption(lightbox.id,e.target.value);setLightbox({...lightbox,caption:e.target.value});}}
+              placeholder="Add a caption..."
+              style={{ width:"100%", background:"rgba(255,255,255,0.07)", border:`1px solid ${C.border}`, borderRadius:8, padding:"11px 14px", color:C.white, fontSize:12, outline:"none" }}/>
+            <button onClick={()=>deleteEvidence(lightbox.id)}
+              style={{ width:"100%", background:"rgba(204,51,51,0.12)", border:`1px solid ${C.red}`, borderRadius:8, padding:"11px", color:C.red, fontSize:11, letterSpacing:"0.15em", cursor:"pointer" }}>
+              DESTROY EVIDENCE
+            </button>
+          </div>
+        </div>
+      )}
+
+      <BottomSheet title="EVIDENCE PHOTOS" onClose={onClose}>
+        <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+          <button onClick={()=>fileInputRef.current?.click()}
+            style={{ width:"100%", background:"transparent", border:`1px solid ${C.border}`, borderRadius:8, padding:"11px 14px", color:C.grey, fontSize:10, letterSpacing:"0.15em", cursor:"pointer" }}>
+            + ATTACH NEW PHOTO
+          </button>
+          {(story.evidence||[]).length===0 ? (
+            <div onClick={()=>fileInputRef.current?.click()}
+              style={{ border:`1.5px dashed ${C.border}`, borderRadius:12, padding:"28px 20px", textAlign:"center", cursor:"pointer" }}>
+              <div style={{ fontSize:32, marginBottom:10 }}>📎</div>
+              <p style={{ fontSize:12, color:C.muted, letterSpacing:"0.1em", margin:0 }}>TAP TO ATTACH EVIDENCE</p>
+              <p style={{ fontSize:9, color:C.muted, marginTop:5, margin:0 }}>Photos, reference images, location shots</p>
+            </div>
+          ) : (
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+              {(story.evidence||[]).map(ev => {
+                const filterCSS = PHOTO_FILTERS.find(f=>f.id===ev.filter)?.css||PHOTO_FILTERS[0].css;
+                const { color:sc, label:sl } = STAMP[ev.filter]||STAMP.classified;
+                return (
+                  <div key={ev.id} onClick={()=>setLightbox(ev)} style={{ cursor:"pointer" }}>
+                    <div style={{ position:"relative", border:`1px solid ${C.border}`, borderRadius:6, overflow:"hidden" }}>
+                      <img src={ev.src} alt="" style={{ width:"100%", height:110, objectFit:"cover", filter:filterCSS, display:"block" }}/>
+                      {ev.filter==="surveillance" && <ScanlineOverlay/>}
+                      <div style={{ position:"absolute", bottom:5, right:5, fontFamily:"'Rajdhani',sans-serif", fontWeight:700, fontSize:7, letterSpacing:"0.2em", color:sc, border:`1px solid ${sc}`, padding:"1px 5px", transform:"rotate(-3deg)", background:"rgba(0,0,0,0.6)" }}>{sl}</div>
+                    </div>
+                    {ev.caption && <p style={{ fontSize:8, color:C.muted, marginTop:3, letterSpacing:"0.06em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", margin:"3px 0 0" }}>// {ev.caption.toUpperCase()}</p>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </BottomSheet>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INFO PANEL (bottom sheet — title, status, genre, logline, cover)
+// ─────────────────────────────────────────────────────────────────────────────
+function InfoSheet({ story, onUpdate, onClose }) {
+  const [title,   setTitle]   = useState(story.title);
+  const [status,  setStatus]  = useState(story.status);
+  const [genre,   setGenre]   = useState(story.genre);
+  const [logline, setLogline] = useState(story.logline||"");
+  const [uploading, setUploading] = useState(false);
+  const [filterPicker, setFilterPicker] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const handleSave = () => {
+    onUpdate({ title:title.trim()||story.title, status, genre, logline });
+    onClose();
+  };
+
+  const handleCoverFile = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try { const c = await compressImage(file); setFilterPicker({ src:c }); }
+    catch (e) { console.error(e); }
+    finally { setUploading(false); }
+  };
+
+  const handleFilterConfirm = (filter) => {
+    onUpdate({ coverImage:filterPicker.src, coverFilter:filter });
+    setFilterPicker(null);
+  };
+
+  return (
+    <>
+      <input ref={fileInputRef} type="file" accept="image/*" onChange={e=>{handleCoverFile(e.target.files[0]);e.target.value="";}} style={{ display:"none" }}/>
+      {filterPicker && <FilterPickerSheet src={filterPicker.src} onConfirm={handleFilterConfirm} onClose={()=>setFilterPicker(null)}/>}
+      {uploading && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <span style={{ color:C.blue, fontFamily:"'Rajdhani',sans-serif", fontSize:14, letterSpacing:"0.3em", animation:"blink 1s infinite" }}>PROCESSING...</span>
+        </div>
+      )}
+      <BottomSheet title="DOSSIER INFO" onClose={onClose}>
+        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+          {story.coverImage && (
+            <CIAImage src={story.coverImage} filter={story.coverFilter} height={130} showStamp style={{ borderRadius:8 }}/>
+          )}
+          <button onClick={()=>fileInputRef.current?.click()}
+            style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:8, padding:"9px 14px", color:C.grey, fontSize:10, letterSpacing:"0.15em", cursor:"pointer" }}>
+            {story.coverImage ? "⟳ CHANGE COVER PHOTO" : "+ ADD COVER PHOTO"}
+          </button>
+          <div>
+            <FieldLabel>TITLE</FieldLabel>
+            <input value={title} onChange={e=>setTitle(e.target.value)}
+              style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:`1px solid ${C.border}`, borderRadius:8, padding:"11px 14px", color:C.white, fontFamily:"'Special Elite',serif", fontSize:17, outline:"none" }}/>
+          </div>
+          <div>
+            <FieldLabel>STATUS</FieldLabel>
+            <div style={{ display:"flex", gap:7, flexWrap:"wrap", marginTop:4 }}>
+              {STATUSES.map(s=><PillBtn key={s} active={status===s} onClick={()=>setStatus(s)} color={STATUS_COLORS[s]}>{s}</PillBtn>)}
+            </div>
+          </div>
+          <div>
+            <FieldLabel>GENRE</FieldLabel>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginTop:4, maxHeight:110, overflowY:"auto" }}>
+              {GENRES.map(g=><PillBtn key={g} active={genre===g} onClick={()=>setGenre(g)}>{g}</PillBtn>)}
+            </div>
+          </div>
+          <div>
+            <FieldLabel>LOGLINE</FieldLabel>
+            <input value={logline} onChange={e=>setLogline(e.target.value)} placeholder="One line summary..."
+              style={{ width:"100%", background:"rgba(255,255,255,0.04)", border:`1px solid ${C.border}`, borderRadius:8, padding:"11px 14px", color:C.greyLight, fontSize:12, outline:"none" }}/>
+          </div>
+          <button onClick={handleSave}
+            style={{ width:"100%", background:C.blue, border:"none", borderRadius:10, padding:"14px", color:C.bg, fontFamily:"'Rajdhani',sans-serif", fontSize:14, fontWeight:700, letterSpacing:"0.2em", cursor:"pointer", marginTop:4 }}>
+            SAVE CHANGES
+          </button>
+        </div>
+      </BottomSheet>
+    </>
+  );
+}
+
+function SectionWriter({ section, onSave }) {
+  const [content, setContent] = useState(section.content||"");
+  const [title,   setTitle]   = useState(section.title);
+  const wordCount = content.split(/\s+/).filter(Boolean).length;
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:C.bg, zIndex:300, display:"flex", flexDirection:"column", animation:"fadeIn 0.18s ease both" }}>
+      {/* Header */}
+      <div style={{ background:C.panel, borderBottom:`1px solid ${C.border}`, padding:"12px 18px", paddingTop:"max(12px,env(safe-area-inset-top,12px))", display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+        <button onClick={()=>onSave({...section,title,content})}
+          style={{ background:"transparent", border:"none", color:C.blue, fontSize:13, cursor:"pointer", letterSpacing:"0.1em", padding:0, flexShrink:0 }}>
+          ‹ BACK
+        </button>
+        <input value={title} onChange={e=>setTitle(e.target.value)}
+          style={{ flex:1, background:"transparent", border:"none", color:C.amber, fontFamily:"'Rajdhani',sans-serif", fontSize:14, fontWeight:700, letterSpacing:"0.25em", outline:"none", minWidth:0 }}/>
+      </div>
+      {/* Writing area */}
+      <textarea
+        value={content}
+        onChange={e=>setContent(e.target.value)}
+        autoFocus
+        placeholder="Write here..."
+        style={{ flex:1, minHeight:0, width:"100%", background:"transparent", border:"none", resize:"none", color:C.white, fontFamily:"'Special Elite',serif", fontSize:16, lineHeight:1.95, padding:"22px 22px", outline:"none", overflowY:"scroll", WebkitOverflowScrolling:"touch", paddingBottom:"max(30px,env(safe-area-inset-bottom,30px))" }}
+      />
+      {/* Footer */}
+      <div style={{ background:C.panel, borderTop:`1px solid ${C.border}`, padding:"6px 18px", paddingBottom:"max(6px,env(safe-area-inset-bottom,6px))", fontSize:9, color:C.muted, textAlign:"right", letterSpacing:"0.1em", flexShrink:0 }}>
+        {wordCount} words · {content.length} chars
+      </div>
+    </div>
+  );
+}
+
+function DossierDetail({ story, onChange, onBack, onDelete }) {
+  const [activeSheet,   setActiveSheet]   = useState(null);
+  const [activeSection, setActiveSection] = useState(null);
+  const [activeChapter, setActiveChapter] = useState(null);
+  const [addingSection, setAddingSection] = useState(false);
+  const [newSecTitle,   setNewSecTitle]   = useState("");
+  const secCounter = useRef(Date.now()+50000);
+
+  // Migrate old plain-text content into sections on first open — runs once
+  const migrated = useRef(false);
+  useEffect(() => {
+    if (!story.sections && !migrated.current) {
+      migrated.current = true;
+      const defaults = DEFAULT_SECTIONS.map(s=>({...s}));
+      if (story.content) defaults[4] = { ...defaults[4], content:story.content };
+      onChange({ ...story, sections:defaults, updatedAt:new Date().toISOString() });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const sections = story.sections || DEFAULT_SECTIONS.map(s=>({...s}));
+
+  const update = useCallback((fields) => {
+    onChange({ ...story, ...fields, updatedAt:new Date().toISOString() });
+  }, [story, onChange]);
+
+  const saveSection = (updated) => {
+    const newSections = sections.map(s=>s.id===updated.id?updated:s);
+    update({ sections:newSections });
+    setActiveSection(null);
+  };
+
+  const addSection = () => {
+    if (!newSecTitle.trim()) return;
+    const newSec = { id:`s${secCounter.current++}`, title:newSecTitle.trim().toUpperCase(), content:"" };
+    update({ sections:[...sections, newSec] });
+    setNewSecTitle(""); setAddingSection(false);
+  };
+
+  const deleteSection = (id) => {
+    update({ sections:sections.filter(s=>s.id!==id) });
+  };
+
+  const chapDone  = story.chapters?.filter(c=>c.done).length||0;
+  const chapTotal = story.chapters?.length||0;
+  const statusColor = STATUS_COLORS[story.status]||C.grey;
+  const totalWords = sections.reduce((acc,s)=>acc+(s.content||"").split(/\s+/).filter(Boolean).length,0);
+
+  const saveChapterFromDetail = (updated) => {
+    update({ chapters:story.chapters.map(c=>c.id===updated.id?updated:c) });
+    setActiveChapter(null);
+  };
+
+  const openSheet  = (name) => setActiveSheet(name);
+  const closeSheet = ()     => setActiveSheet(null);
+
+  // Chapter writer open
+  if (activeChapter) {
+    return (
+      <div style={{ position:"fixed", inset:0, background:C.bg, zIndex:300, display:"flex", flexDirection:"column", animation:"fadeIn 0.18s ease both" }}>
+        <div style={{ background:C.panel, borderBottom:`1px solid ${C.border}`, padding:"12px 18px", paddingTop:"max(12px,env(safe-area-inset-top,12px))", display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+          <button onClick={()=>saveChapterFromDetail(activeChapter)}
+            style={{ background:"transparent", border:"none", color:C.blue, fontSize:13, cursor:"pointer", letterSpacing:"0.1em", padding:0, flexShrink:0 }}>
+            ‹ BACK
+          </button>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontFamily:"'Special Elite',serif", fontSize:14, color:C.white, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{activeChapter.title}</div>
+            <div style={{ fontSize:8, color:C.muted, letterSpacing:"0.1em", marginTop:2 }}>{activeChapter.done?"✓ COMPLETE":"IN PROGRESS"}</div>
+          </div>
+          <button onClick={()=>setActiveChapter({...activeChapter,done:!activeChapter.done})}
+            style={{ background:activeChapter.done?"rgba(80,170,96,0.15)":"transparent", border:`1px solid ${activeChapter.done?C.green:C.border}`, borderRadius:8, padding:"5px 10px", color:activeChapter.done?C.green:C.grey, fontSize:9, letterSpacing:"0.12em", cursor:"pointer", flexShrink:0 }}>
+            {activeChapter.done?"✓ DONE":"MARK DONE"}
+          </button>
+        </div>
+        <textarea
+          value={activeChapter.content||""}
+          onChange={e=>setActiveChapter({...activeChapter,content:e.target.value})}
+          autoFocus
+          placeholder={`Write notes for "${activeChapter.title}" here...\n\nScene ideas, dialogue, character beats, research — anything that belongs in this chapter.`}
+          style={{ flex:1, minHeight:0, width:"100%", background:"transparent", border:"none", resize:"none", color:C.white, fontFamily:"'Special Elite',serif", fontSize:16, lineHeight:1.95, padding:"22px 22px", outline:"none", overflowY:"scroll", WebkitOverflowScrolling:"touch", paddingBottom:"max(30px,env(safe-area-inset-bottom,30px))" }}
+        />
+        <div style={{ background:C.panel, borderTop:`1px solid ${C.border}`, padding:"6px 18px", paddingBottom:"max(6px,env(safe-area-inset-bottom,6px))", fontSize:9, color:C.muted, textAlign:"right", letterSpacing:"0.1em", flexShrink:0 }}>
+          {(activeChapter.content||"").split(/\s+/).filter(Boolean).length} words
+        </div>
+      </div>
+    );
+  }
+
+  // Section writer open
+  if (activeSection) {
+    return <SectionWriter section={activeSection} onSave={saveSection} onBack={()=>setActiveSection(null)}/>;
+  }
+
+  return (
+    <>
+      {activeSheet==="chapters" && <ChaptersSheet story={story} onUpdate={update} onClose={closeSheet}/>}
+      {activeSheet==="evidence" && <EvidenceSheet story={story} onUpdate={update} onClose={closeSheet}/>}
+      {activeSheet==="info"     && <InfoSheet     story={story} onUpdate={update} onClose={closeSheet}/>}
+
+      <div style={{ position:"fixed", inset:0, background:C.bg, display:"flex", flexDirection:"column" }}>
+
+        {/* ── Top bar ── */}
+        <div style={{ background:C.panel, borderBottom:`1px solid ${C.border}`, padding:"10px 16px", paddingTop:"max(10px,env(safe-area-inset-top,10px))", display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
+          <button onClick={onBack}
+            style={{ background:"transparent", border:"none", color:C.blue, fontSize:13, cursor:"pointer", letterSpacing:"0.1em", padding:0, flexShrink:0 }}>
+            ‹ ARCHIVE
+          </button>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontFamily:"'Special Elite',serif", fontSize:15, color:C.white, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{story.title}</div>
+            <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:2 }}>
+              <span style={{ fontSize:8, color:statusColor, letterSpacing:"0.1em", fontFamily:"'Rajdhani',sans-serif", fontWeight:600 }}>{story.status}</span>
+              <span style={{ fontSize:8, color:C.muted }}>·</span>
+              <span style={{ fontSize:8, color:C.muted }}>{story.genre}</span>
+              <span style={{ fontSize:8, color:C.muted }}>·</span>
+              <span style={{ fontSize:8, color:C.muted }}>{totalWords}w total</span>
+            </div>
+          </div>
+          <button onClick={()=>openSheet("info")}
+            style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 10px", color:C.grey, fontSize:9, letterSpacing:"0.1em", cursor:"pointer", flexShrink:0 }}>
+            INFO
+          </button>
+        </div>
+
+        {/* ── Scrollable body ── */}
+        <div style={{ flex:1, minHeight:0, overflowY:"scroll", WebkitOverflowScrolling:"touch" }}>
+
+          {/* ── SECTIONS ── */}
+          <div style={{ padding:"16px 16px 8px" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+              <span style={{ fontSize:9, color:C.grey, letterSpacing:"0.22em", fontFamily:"'Rajdhani',sans-serif", fontWeight:600 }}>FIELD NOTES</span>
+              <button onClick={()=>setAddingSection(v=>!v)}
+                style={{ background:addingSection?C.blueFaint:"transparent", border:`1px solid ${addingSection?C.blue:C.border}`, borderRadius:8, padding:"4px 10px", color:addingSection?C.blue:C.grey, fontSize:9, letterSpacing:"0.1em", cursor:"pointer" }}>
+                {addingSection?"CANCEL":"+ SECTION"}
+              </button>
+            </div>
+
+            {addingSection && (
+              <div style={{ display:"flex", gap:7, marginBottom:10, animation:"fadeUp 0.15s ease both" }}>
+                <input value={newSecTitle} onChange={e=>setNewSecTitle(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&addSection()} placeholder="Section name..." autoFocus
+                  style={{ flex:1, background:"rgba(255,255,255,0.05)", border:`1px solid ${C.blue}`, borderRadius:8, padding:"9px 12px", color:C.white, fontSize:13, outline:"none" }}/>
+                <button onClick={addSection}
+                  style={{ background:C.blue, border:"none", borderRadius:8, padding:"9px 14px", color:C.bg, fontSize:16, fontWeight:700, cursor:"pointer" }}>+</button>
+              </div>
+            )}
+
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {sections.map(sec => {
+                const wc = (sec.content||"").split(/\s+/).filter(Boolean).length;
+                return (
+                  <div key={sec.id} onClick={()=>setActiveSection(sec)}
+                    style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${sec.content?C.borderBright:C.border}`, borderRadius:12, padding:"14px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12, transition:"all 0.12s" }}>
+                    {/* Left accent */}
+                    <div style={{ width:3, alignSelf:"stretch", background:sec.content?C.amber:C.muted, borderRadius:2, flexShrink:0, opacity:0.7 }}/>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:13, fontWeight:700, color:sec.content?C.amber:C.greyLight, letterSpacing:"0.2em" }}>
+                        {sec.title}
+                      </div>
+                      {sec.content ? (
+                        <div style={{ fontSize:12, color:C.greyLight, marginTop:5, lineHeight:1.5, fontFamily:"'Special Elite',serif", overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>
+                          {sec.content}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize:11, color:C.muted, marginTop:4, fontStyle:"italic" }}>
+                          Tap to write...
+                        </div>
+                      )}
+                      {wc>0 && <div style={{ fontSize:8, color:C.muted, marginTop:5, letterSpacing:"0.08em" }}>{wc} words</div>}
+                    </div>
+                    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8 }}>
+                      <span style={{ color:C.blue, fontSize:18 }}>›</span>
+                      <button onClick={e=>{e.stopPropagation();if(window.confirm(`Delete "${sec.title}"?`))deleteSection(sec.id);}}
+                        style={{ background:"transparent", border:"none", color:C.muted, cursor:"pointer", fontSize:14, lineHeight:1, padding:0 }}>×</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── CHAPTERS — big and prominent ── */}
+          <div style={{ padding:"16px 16px 40px" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+              <span style={{ fontSize:9, color:C.grey, letterSpacing:"0.22em", fontFamily:"'Rajdhani',sans-serif", fontWeight:600 }}>
+                CHAPTERS {chapTotal>0?`— ${chapDone}/${chapTotal} COMPLETE`:""}
+              </span>
+              <button onClick={()=>openSheet("chapters")}
+                style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:8, padding:"4px 10px", color:C.grey, fontSize:9, letterSpacing:"0.1em", cursor:"pointer" }}>
+                + ADD / MANAGE
+              </button>
+            </div>
+
+            {chapTotal>0 && (
+              <div style={{ height:3, background:C.blueFaint, borderRadius:2, overflow:"hidden", marginBottom:14 }}>
+                <div style={{ height:"100%", width:`${(chapDone/chapTotal)*100}%`, background:`linear-gradient(90deg,${C.blueDim},${C.blue})`, transition:"width 0.3s" }}/>
+              </div>
+            )}
+
+            {chapTotal===0 ? (
+              <div onClick={()=>openSheet("chapters")}
+                style={{ border:`1.5px dashed ${C.border}`, borderRadius:12, padding:"22px 20px", textAlign:"center", cursor:"pointer" }}>
+                <div style={{ fontSize:9, color:C.muted, letterSpacing:"0.2em" }}>NO CHAPTERS YET</div>
+                <div style={{ fontSize:11, color:C.muted, marginTop:5, fontStyle:"italic" }}>Tap to add your first chapter</div>
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                {story.chapters.map(ch=>(
+                  <div key={ch.id} onClick={()=>setActiveChapter({...ch})}
+                    style={{ background:ch.done?"rgba(79,195,247,0.06)":"rgba(255,255,255,0.03)", border:`1px solid ${ch.done?C.blueDim:C.border}`, borderRadius:14, padding:"16px 18px", cursor:"pointer", display:"flex", alignItems:"center", gap:14 }}>
+                    {/* Big checkbox */}
+                    <div style={{ width:24, height:24, border:`2px solid ${ch.done?C.blue:C.muted}`, borderRadius:6, background:ch.done?C.blue:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, transition:"all 0.15s" }}>
+                      {ch.done && <span style={{ color:C.bg, fontSize:13, fontWeight:900 }}>✓</span>}
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontFamily:"'Special Elite',serif", fontSize:16, color:ch.done?C.greyLight:C.white, textDecoration:ch.done?"line-through":"none", lineHeight:1.3 }}>
+                        {ch.title}
+                      </div>
+                      {ch.content && (
+                        <div style={{ fontSize:10, color:C.muted, marginTop:4, letterSpacing:"0.06em" }}>
+                          {ch.content.split(/\s+/).filter(Boolean).length} words written
+                        </div>
+                      )}
+                      {!ch.content && (
+                        <div style={{ fontSize:10, color:C.muted, marginTop:4, fontStyle:"italic" }}>
+                          tap to write notes
+                        </div>
+                      )}
+                    </div>
+                    <span style={{ color:ch.done?C.blue:C.muted, fontSize:20 }}>›</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Evidence + Burn row */}
+            <div style={{ display:"flex", gap:10, marginTop:16 }}>
+              <button onClick={()=>openSheet("evidence")}
+                style={{ flex:1, background:"rgba(255,255,255,0.03)", border:`1px solid ${C.border}`, borderRadius:10, padding:"12px", color:C.greyLight, fontSize:10, letterSpacing:"0.12em", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                📎 EVIDENCE {(story.evidence||[]).length>0?`(${story.evidence.length})`:""}
+              </button>
+              <button onClick={()=>{ if(window.confirm(`Burn "${story.title}"?`)){onDelete(story.id);onBack();} }}
+                style={{ background:"rgba(204,51,51,0.08)", border:`1px solid ${C.red}44`, borderRadius:10, padding:"12px 16px", color:C.red, fontSize:10, letterSpacing:"0.12em", cursor:"pointer" }}>
+                BURN
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN APP
+// ─────────────────────────────────────────────────────────────────────────────
+function MainApp() {
+  const [stories,  setStories]  = useState(()=>loadFromStorage(SK.stories, DEFAULTS));
+  const [activeId, setActiveId] = useState(null);
+  const [showNew,  setShowNew]  = useState(false);
+  const nextId = useRef(1000);
+
+  useEffect(()=>{ saveToStorage(SK.stories, stories); }, [stories]);
+
+  const addStory    = d   => { const id=nextId.current++; setStories(ss=>[{id,...d},...ss]); setActiveId(id); };
+  const updateStory = upd => setStories(ss=>ss.map(s=>s.id===upd.id?upd:s));
+  const deleteStory = id  => { setStories(ss=>ss.filter(s=>s.id!==id)); setActiveId(null); };
+  const activeStory = stories.find(s=>s.id===activeId);
+
+  return (
+    <>
+      {showNew && <NewDossierSheet onSave={d=>{addStory(d);setShowNew(false);}} onClose={()=>setShowNew(false)}/>}
+      {activeStory
+        ? <DossierDetail story={activeStory} onChange={updateStory} onBack={()=>setActiveId(null)} onDelete={deleteStory}/>
+        : <DossierList   stories={stories}   onOpen={id=>setActiveId(id)} onNew={()=>setShowNew(true)} onDelete={deleteStory}/>
+      }
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROOT
+// ─────────────────────────────────────────────────────────────────────────────
+function App() {
+  const [booted, setBooted] = useState(false);
+  return (
+    <>
+      <style>{globalCSS}</style>
+      {booted ? <MainApp/> : <BootSequence onComplete={()=>setBooted(true)}/>}
+    </>
+  );
+}
+
+
+    ReactDOM.createRoot(document.getElementById('root')).render(
+      React.createElement(App)
+    );
+  </script>
+</body>
+</html>
