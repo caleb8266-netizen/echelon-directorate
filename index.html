@@ -1198,11 +1198,27 @@ function MainApp() {
   const [stories,  setStories]  = useState(()=>loadFromStorage(SK.stories, DEFAULTS));
   const [activeId, setActiveId] = useState(null);
   const [showNew,  setShowNew]  = useState(false);
-  const nextId = useRef(1000);
+
+  // Start nextId above the highest existing ID so new stories never collide
+  const nextId = useRef(null);
+  if (nextId.current === null) {
+    const loaded = loadFromStorage(SK.stories, DEFAULTS);
+    const maxId  = loaded.reduce((max, s) => Math.max(max, s.id || 0), 0);
+    nextId.current = Math.max(maxId + 1, Date.now());
+  }
 
   useEffect(()=>{ saveToStorage(SK.stories, stories); }, [stories]);
 
-  const addStory    = d   => { const id=nextId.current++; setStories(ss=>[{id,...d},...ss]); setActiveId(id); };
+  const addStory = d => {
+    const id = nextId.current++;
+    const newStory = { id, ...d };
+    setStories(ss => {
+      const updated = [newStory, ...ss];
+      saveToStorage(SK.stories, updated); // save immediately
+      return updated;
+    });
+    setActiveId(id);
+  };
   const updateStory = upd => setStories(ss=>ss.map(s=>s.id===upd.id?upd:s));
   const deleteStory = id  => { setStories(ss=>ss.filter(s=>s.id!==id)); setActiveId(null); };
   const activeStory = stories.find(s=>s.id===activeId);
