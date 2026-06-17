@@ -2,15 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="apple-mobile-web-app-title" content="E.D. Archive"/>
   <meta name="theme-color" content="#07090b"/>
   <title>The Echelon Directorate</title>
-  <style>
-    html, body { margin: 0; padding: 0; background: #07090b; }
-  </style>
+  <style>html, body { margin: 0; padding: 0; background: #07090b; }</style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -71,6 +69,8 @@ const globalCSS = `
     overflow: hidden;
   }
   input, textarea, button, select { font-family: 'Share Tech Mono', monospace; }
+  /* Prevent iOS Safari zoom on input tap — font-size must be >= 16px */
+  input, textarea, select { font-size: 16px !important; }
   textarea { -webkit-overflow-scrolling: touch; }
   ::-webkit-scrollbar { display: none; }
   * { scrollbar-width: none; }
@@ -348,7 +348,7 @@ function BootSequence({ onComplete }) {
   }, [done]);
 
   return (
-    <div style={{ height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:32, animation:"flicker 8s infinite" }}>
+    <div style={{ height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"32px 24px", animation:"flicker 8s infinite", textAlign:"center" }}>
       <EDLogo size={60} color={C.silver} glow/>
       <h1 style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:20, fontWeight:700, letterSpacing:"0.45em", color:C.amber, marginTop:14, marginBottom:4, textAlign:"center" }}>
         THE ECHELON DIRECTORATE
@@ -939,6 +939,435 @@ function SectionWriter({ section, onSave }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SCREENPLAY WRITER — with autocomplete, shot types, and split notes tab
+// ─────────────────────────────────────────────────────────────────────────────
+const SP_TYPES = [
+  { id:"scene",        label:"SCENE",      hint:"INT. LOCATION - DAY",         color:C.amber,     upper:true,  align:"left",   ml:"0%",  mr:"0%"  },
+  { id:"action",       label:"ACTION",     hint:"Character enters the room...", color:C.white,     upper:false, align:"left",   ml:"0%",  mr:"0%"  },
+  { id:"character",    label:"CHARACTER",  hint:"CHARACTER NAME",               color:C.blue,      upper:true,  align:"center", ml:"30%", mr:"10%" },
+  { id:"dialogue",     label:"DIALOGUE",   hint:"What the character says...",   color:C.greyLight, upper:false, align:"left",   ml:"20%", mr:"20%" },
+  { id:"parenthetical",label:"PAREN",      hint:"(beat)",                       color:C.green,     upper:false, align:"left",   ml:"25%", mr:"35%" },
+  { id:"transition",   label:"TRANSITION", hint:"CUT TO:",                      color:C.amber,     upper:true,  align:"right",  ml:"40%", mr:"0%"  },
+  { id:"shot",         label:"SHOT",       hint:"ECU — CHARACTER",              color:"#9b59b6",   upper:true,  align:"left",   ml:"0%",  mr:"0%"  },
+];
+
+// Autocomplete suggestions
+const SCENE_PREFIXES  = ["INT.", "EXT.", "INT./EXT.", "I/E."];
+const TIME_OF_DAY     = ["DAY", "NIGHT", "DAWN", "DUSK", "CONTINUOUS", "LATER", "MOMENTS LATER"];
+const SHOT_TYPES      = [
+  "ECU —","CU —","MCU —","MS —","WS —",
+  "OTS —","POV —","AERIAL —","INSERT —",
+];
+const TRANSITIONS     = [
+  "CUT TO:","SMASH CUT TO:","MATCH CUT TO:",
+  "FADE IN:","FADE OUT.","FADE TO BLACK.","DISSOLVE TO:",
+];
+
+function buildSuggestions(type, text) {
+  const t = text.toUpperCase().trim();
+  if (type === "scene") {
+    // Empty scene — offer prefixes
+    if (!t) return SCENE_PREFIXES.map(p=>({ label:p, insert:p+" " }));
+    // After prefix — offer time of day
+    const prefixMatch = SCENE_PREFIXES.find(p=>t.startsWith(p));
+    if (prefixMatch && t.includes(" - ")) {
+      return TIME_OF_DAY
+        .filter(tod=>tod.startsWith(t.split(" - ").pop()))
+        .map(tod=>({ label:tod, insert: text.replace(/[A-Z]*$/, "") + tod }));
+    }
+    // Partial prefix
+    return SCENE_PREFIXES
+      .filter(p=>p.startsWith(t)&&p!==t)
+      .map(p=>({ label:p, insert:p+" " }));
+  }
+  if (type === "shot") {
+    if (!t) return SHOT_TYPES.map(s=>({ label:s, insert:s+" " }));
+    return SHOT_TYPES
+      .filter(s=>s.startsWith(t)&&s.trim()!==t)
+      .map(s=>({ label:s, insert:s+" " }));
+  }
+  if (type === "transition") {
+    if (!t) return TRANSITIONS.map(tr=>({ label:tr, insert:tr }));
+    return TRANSITIONS
+      .filter(tr=>tr.startsWith(t)&&tr!==t)
+      .map(tr=>({ label:tr, insert:tr }));
+  }
+  return [];
+}
+
+function ScreenplayWriter({ chapter, onSave }) {
+  const initBlocks = () => {
+    if (chapter.blocks && chapter.blocks.length > 0) return chapter.blocks;
+    if (chapter.content) return [{ id:Date.now(), type:"action", text:chapter.content }];
+    return [{ id:Date.now(), type:"scene", text:"" }];
+  };
+
+  const [tab,           setTab]           = useState("screenplay");
+  const [blocks,        setBlocks]        = useState(initBlocks);
+  const [notes,         setNotes]         = useState(chapter.notes||"");
+  const [activeBlock,   setActiveBlock]   = useState(0);
+  const [suggestions,   setSuggestions]   = useState([]);
+  const [showToolbar,   setShowToolbar]   = useState(true);
+  const [showQuickInsert, setShowQuickInsert] = useState(false);
+  const textRefs   = useRef({});
+  const blockIdRef = useRef(Date.now() + 9999);
+  const toolbarTimer = useRef(null);
+
+  const wordCount = blocks.reduce((acc,b)=>acc+b.text.split(/\s+/).filter(Boolean).length,0);
+  const notesWords = notes.split(/\s+/).filter(Boolean).length;
+
+  const resetTimer = () => {
+    setShowToolbar(true);
+    clearTimeout(toolbarTimer.current);
+    toolbarTimer.current = setTimeout(()=>setShowToolbar(false), 5000);
+  };
+  useEffect(()=>{ resetTimer(); return()=>clearTimeout(toolbarTimer.current); },[]);
+
+  const handleSave = () => {
+    const plainText = blocks.map(b=>b.text).join("\n");
+    onSave({ ...chapter, blocks, content:plainText, notes });
+  };
+
+  const updateBlock = (idx, text) => {
+    setBlocks(bs=>bs.map((b,i)=>i===idx?{...b,text}:b));
+    const type = blocks[idx]?.type;
+    if (type==="character") {
+      // Show matching character names as you type
+      const upper = text.toUpperCase();
+      const matches = knownCharacters.filter(c=>c.startsWith(upper)&&c!==upper);
+      setSuggestions(matches.map(c=>({ label:c, insert:c })));
+    } else if (["scene","shot","transition"].includes(type)) {
+      setSuggestions(buildSuggestions(type, text));
+    } else {
+      setSuggestions([]);
+    }
+  };
+
+  const applySuggestion = (sug, idx) => {
+    setBlocks(bs=>bs.map((b,i)=>i===idx?{...b,text:sug.insert}:b));
+    setSuggestions([]);
+    setTimeout(()=>textRefs.current[idx]?.focus(),30);
+  };
+
+  const setType = (type) => {
+    setBlocks(bs=>bs.map((b,i)=>i===activeBlock?{...b,type}:b));
+    setSuggestions(buildSuggestions(type, blocks[activeBlock]?.text||""));
+    setTimeout(()=>textRefs.current[activeBlock]?.focus(),50);
+  };
+
+  // Track all character names used so far for autocomplete
+  const knownCharacters = [...new Set(
+    blocks
+      .filter(b=>b.type==="character" && b.text.trim())
+      .map(b=>b.text.trim().toUpperCase())
+  )];
+
+  const handleKeyDown = (e, idx) => {
+    resetTimer();
+
+    // Tab — jump to character block (from action or dialogue)
+    if (e.key==="Tab") {
+      e.preventDefault();
+      const cur = blocks[idx];
+      if (cur.type==="action" || cur.type==="dialogue" || cur.type==="shot" || cur.type==="transition") {
+        // Insert a character block right after
+        const newBlock = { id:blockIdRef.current++, type:"character", text:"" };
+        const insertAt = idx+1;
+        setBlocks(bs=>[...bs.slice(0,insertAt), newBlock, ...bs.slice(insertAt)]);
+        setActiveBlock(insertAt);
+        setSuggestions(knownCharacters.map(c=>({ label:c, insert:c })));
+        setTimeout(()=>textRefs.current[insertAt]?.focus(),30);
+      } else if (cur.type==="character") {
+        // Tab on existing character — show known characters
+        setSuggestions(knownCharacters.filter(c=>c!==cur.text.toUpperCase()).map(c=>({ label:c, insert:c })));
+      }
+      return;
+    }
+
+    // Tab through suggestions
+    if (e.key==="Enter" && suggestions.length>0 && blocks[idx].type==="character") {
+      e.preventDefault();
+      applySuggestion(suggestions[0], idx);
+      return;
+    }
+
+    if (e.key==="Enter") {
+      e.preventDefault();
+      setSuggestions([]);
+      const cur = blocks[idx];
+      const nextType = cur.type==="character"?"dialogue"
+                     : cur.type==="parenthetical"?"dialogue"
+                     : cur.type==="shot"?"action"
+                     : "action";
+      const newBlock = { id:blockIdRef.current++, type:nextType, text:"" };
+      setBlocks(bs=>[...bs.slice(0,idx+1), newBlock, ...bs.slice(idx+1)]);
+      setActiveBlock(idx+1);
+      setTimeout(()=>textRefs.current[idx+1]?.focus(),30);
+    }
+    if (e.key==="Backspace" && blocks[idx].text==="" && blocks.length>1) {
+      e.preventDefault();
+      setSuggestions([]);
+      setBlocks(bs=>bs.filter((_,i)=>i!==idx));
+      const prev = Math.max(0,idx-1);
+      setActiveBlock(prev);
+      setTimeout(()=>textRefs.current[prev]?.focus(),30);
+    }
+  };
+
+  const addBlock = (type, text="") => {
+    const newBlock = { id:blockIdRef.current++, type, text };
+    const insertAt = activeBlock+1;
+    setBlocks(bs=>[...bs.slice(0,insertAt), newBlock, ...bs.slice(insertAt)]);
+    setActiveBlock(insertAt);
+    setSuggestions(buildSuggestions(type,""));
+    setTimeout(()=>textRefs.current[insertAt]?.focus(),50);
+  };
+
+  const activeType = SP_TYPES.find(t=>t.id===blocks[activeBlock]?.type)||SP_TYPES[0];
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"#09100a", zIndex:300, display:"flex", flexDirection:"column", animation:"fadeIn 0.18s ease both" }}>
+
+      {/* Header */}
+      <div style={{ background:C.panel, borderBottom:`1px solid ${C.border}`, padding:"10px 16px", paddingTop:"max(10px,env(safe-area-inset-top,10px))", display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
+        <button onClick={handleSave} style={{ background:"transparent", border:"none", color:C.blue, fontSize:13, cursor:"pointer", letterSpacing:"0.1em", padding:0, flexShrink:0 }}>‹ BACK</button>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontFamily:"'Special Elite',serif", fontSize:13, color:C.white, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{chapter.title}</div>
+          <div style={{ fontSize:8, color:C.muted, letterSpacing:"0.1em", marginTop:1 }}>
+            {tab==="screenplay" ? `${wordCount}w · ${blocks.length} blocks` : `${notesWords}w notes`}
+          </div>
+        </div>
+        <button onClick={()=>onSave({...chapter,blocks,content:blocks.map(b=>b.text).join("\n"),notes,done:!chapter.done})}
+          style={{ background:chapter.done?"rgba(80,170,96,0.15)":"transparent", border:`1px solid ${chapter.done?C.green:C.border}`, borderRadius:8, padding:"4px 9px", color:chapter.done?C.green:C.grey, fontSize:9, letterSpacing:"0.1em", cursor:"pointer", flexShrink:0 }}>
+          {chapter.done?"✓ DONE":"MARK DONE"}
+        </button>
+      </div>
+
+      {/* Tab switcher */}
+      <div style={{ display:"flex", background:C.panel, borderBottom:`1px solid ${C.border}`, flexShrink:0 }}>
+        {[{id:"screenplay",label:"SCREENPLAY"},{id:"notes",label:"CHAPTER NOTES"}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)}
+            style={{ flex:1, padding:"9px 0", background:"transparent", border:"none", borderBottom:`2px solid ${tab===t.id?C.blue:"transparent"}`, color:tab===t.id?C.blue:C.grey, fontSize:10, letterSpacing:"0.15em", cursor:"pointer", fontFamily:"'Rajdhani',sans-serif", fontWeight:700, transition:"all 0.15s" }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── SCREENPLAY TAB ── */}
+      {tab==="screenplay" && (
+        <>
+          <div style={{ flex:1, minHeight:0, overflowY:"scroll", WebkitOverflowScrolling:"touch", background:"#09100a", padding:"20px 16px 140px" }} onClick={resetTimer}>
+            {/* Page title */}
+            <div style={{ textAlign:"center", fontFamily:"'Share Tech Mono',monospace", fontSize:11, color:C.muted, letterSpacing:"0.2em", marginBottom:24, paddingBottom:14, borderBottom:`1px solid ${C.border}` }}>
+              {chapter.title.toUpperCase()}
+            </div>
+
+            {blocks.map((block,idx)=>{
+              const sp = SP_TYPES.find(t=>t.id===block.type)||SP_TYPES[1];
+              const isActive = idx===activeBlock;
+              return (
+                <div key={block.id} style={{ marginLeft:sp.ml, marginRight:sp.mr, marginBottom:block.type==="scene"||block.type==="transition"?"20px":"8px", position:"relative" }}>
+                  {isActive && (
+                    <div style={{ fontSize:7, color:sp.color, letterSpacing:"0.2em", marginBottom:2, opacity:0.65, fontFamily:"'Share Tech Mono',monospace" }}>
+                      {sp.label}
+                    </div>
+                  )}
+                  <textarea
+                    ref={el=>textRefs.current[idx]=el}
+                    value={block.text}
+                    onChange={e=>updateBlock(idx,e.target.value)}
+                    onFocus={()=>{ setActiveBlock(idx); setSuggestions(buildSuggestions(block.type,block.text)); resetTimer(); }}
+                    onKeyDown={e=>handleKeyDown(e,idx)}
+                    placeholder={isActive?sp.hint:""}
+                    rows={1}
+                    style={{
+                      width:"100%", background:"transparent", border:"none",
+                      borderBottom:isActive?`1px solid ${sp.color}22`:"none",
+                      resize:"none", outline:"none",
+                      color:block.text?sp.color:C.muted,
+                      fontFamily:"'Share Tech Mono',monospace",
+                      fontSize:"16px",
+                      fontWeight:block.type==="scene"||block.type==="character"||block.type==="shot"?"bold":"normal",
+                      textTransform:sp.upper?"uppercase":"none",
+                      textAlign:sp.align, lineHeight:1.75,
+                      letterSpacing:block.type==="scene"||block.type==="character"?"0.08em":"0.02em",
+                      padding:"2px 0", overflowY:"hidden", minHeight:"1.75em",
+                      WebkitTextSizeAdjust:"100%",
+                    }}
+                    onInput={e=>{ e.target.style.height="auto"; e.target.style.height=e.target.scrollHeight+"px"; }}
+                  />
+
+                  {/* Autocomplete dropdown */}
+                  {isActive && suggestions.length>0 && (
+                    <div style={{ position:"absolute", left:0, right:0, top:"100%", zIndex:10, background:C.panel, border:`1px solid ${C.borderBright}`, borderRadius:8, overflow:"hidden", boxShadow:`0 4px 20px rgba(0,0,0,0.5)`, animation:"fadeUp 0.1s ease both" }}>
+                      {suggestions.slice(0,6).map((sug,si)=>(
+                        <div key={si} onClick={()=>applySuggestion(sug,idx)}
+                          style={{ padding:"9px 14px", fontSize:11, color:activeType.color, fontFamily:"'Share Tech Mono',monospace", letterSpacing:"0.06em", borderBottom:si<suggestions.length-1?`1px solid ${C.border}`:"none", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                          <span>{sug.label}</span>
+                          {si===0 && <span style={{ fontSize:8, color:C.muted, letterSpacing:"0.1em" }}>TAP</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── TOOLBAR ── */}
+          <div style={{ flexShrink:0, transition:"opacity 0.3s,transform 0.3s", opacity:showToolbar?1:0, transform:showToolbar?"translateY(0)":"translateY(6px)", pointerEvents:showToolbar?"auto":"none" }}>
+
+            {/* Quick insert strip */}
+            {showQuickInsert && (
+              <div style={{ background:"#0a0d10", borderTop:`1px solid ${C.border}`, display:"flex", gap:5, overflowX:"auto", padding:"8px 12px", animation:"fadeUp 0.15s ease both" }}>
+                {["INT.","EXT.","INT./EXT.","ECU —","CU —","MCU —","MS —","WS —","OTS —","POV —","AERIAL —","INSERT —","CUT TO:","SMASH CUT TO:","MATCH CUT TO:","FADE IN:","FADE OUT.","FADE TO BLACK.","DISSOLVE TO:"].map(s=>(
+                  <button key={s} onClick={()=>{
+                    const type = s.endsWith("TO:")||s.endsWith("OUT.")||s.endsWith("IN:")||s.endsWith("BLACK.") ? "transition"
+                               : s.includes("—") ? "shot" : "scene";
+                    addBlock(type, s+" ");
+                    setShowQuickInsert(false);
+                  }}
+                    style={{ background:"transparent", border:`1px solid ${C.borderBright}`, borderRadius:3, padding:"5px 11px", color:C.amber, fontSize:9, letterSpacing:"0.12em", cursor:"pointer", whiteSpace:"nowrap", flexShrink:0, fontFamily:"'Share Tech Mono',monospace", fontWeight:"bold" }}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Main icon bar — Cold War redacted style */}
+            <div style={{ background:"#0d1015", borderTop:`2px solid ${C.borderBright}`, display:"flex", alignItems:"stretch", paddingBottom:"max(6px,env(safe-area-inset-bottom,6px))" }}>
+
+              {/* Classified menu button */}
+              <button onClick={()=>setShowQuickInsert(v=>!v)}
+                style={{ display:"flex", flexDirection:"column", justifyContent:"center", alignItems:"center", gap:3, padding:"8px 13px", background:showQuickInsert?`${C.amber}15`:"transparent", border:"none", borderRight:`1px solid ${C.border}`, cursor:"pointer", flexShrink:0 }}>
+                {/* Redacted lines icon */}
+                <svg width="18" height="14" viewBox="0 0 18 14" fill="none">
+                  <rect x="0" y="0" width="18" height="3" rx="1" fill={showQuickInsert?C.amber:C.greyLight}/>
+                  <rect x="0" y="5.5" width="18" height="3" rx="1" fill={showQuickInsert?C.amber:C.greyLight}/>
+                  <rect x="0" y="11" width="11" height="3" rx="1" fill={showQuickInsert?C.amber:C.greyLight}/>
+                  {showQuickInsert && <rect x="11.5" y="11" width="6.5" height="3" rx="1" fill={C.red} opacity="0.8"/>}
+                </svg>
+                <span style={{ fontSize:7, color:showQuickInsert?C.amber:C.grey, letterSpacing:"0.12em", fontFamily:"'Rajdhani',sans-serif", fontWeight:700 }}>
+                  {showQuickInsert?"CLOSE":"FILE"}
+                </span>
+              </button>
+
+              {/* Icon buttons */}
+              <div style={{ flex:1, display:"flex", alignItems:"stretch", overflowX:"auto" }}>
+                {[
+                  {
+                    type:"scene", label:"SCENE",
+                    svg:<svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                      {/* Classified folder / location marker */}
+                      <rect x="2" y="5" width="20" height="15" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M2 9h20" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M2 5l4-3h4l1 3" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                      {/* Redacted bar inside */}
+                      <rect x="5" y="12" width="8" height="2" rx="0.5" fill="currentColor" opacity="0.7"/>
+                      <rect x="5" y="15.5" width="5" height="2" rx="0.5" fill="currentColor" opacity="0.4"/>
+                    </svg>
+                  },
+                  {
+                    type:"action", label:"ACTION",
+                    svg:<svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                      {/* Redacted document with exclamation */}
+                      <rect x="4" y="2" width="16" height="20" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M8 7h8M8 11h8M8 15h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      {/* Redacted bar */}
+                      <rect x="13" y="14.5" width="3" height="2" rx="0.3" fill="currentColor" opacity="0.8"/>
+                    </svg>
+                  },
+                  {
+                    type:"character", label:"AGENT",
+                    svg:<svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                      {/* ID badge / operative */}
+                      <rect x="4" y="2" width="16" height="20" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+                      <circle cx="12" cy="9" r="3" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M7 19c0-3 2.2-5 5-5s5 2 5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      <rect x="7" y="3.5" width="10" height="1.5" rx="0.5" fill="currentColor" opacity="0.5"/>
+                    </svg>
+                  },
+                  {
+                    type:"parenthetical", label:"PAREN",
+                    svg:<svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                      {/* Brackets — like [REDACTED] */}
+                      <path d="M9 4H6v16h3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M15 4h3v16h-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                      <rect x="8" y="10" width="8" height="4" rx="0.5" fill="currentColor" opacity="0.3"/>
+                    </svg>
+                  },
+                  {
+                    type:"dialogue", label:"INTEL",
+                    svg:<svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                      {/* Transmission / radio signal */}
+                      <rect x="3" y="7" width="14" height="10" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M10 17l-2 3h6l-2-3" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                      <path d="M17 10l3-2v8l-3-2" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                      <path d="M7 12h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  },
+                  {
+                    type:"shot", label:"SURVEIL",
+                    svg:<svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                      {/* Surveillance / crosshair camera */}
+                      <circle cx="12" cy="12" r="7" stroke="currentColor" strokeWidth="1.5"/>
+                      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M12 3v2M12 19v2M3 12h2M19 12h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  },
+                  {
+                    type:"transition", label:"EXTRACT",
+                    svg:<svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                      {/* Cut / extraction arrow */}
+                      <path d="M3 6h18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      <path d="M3 18h18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      <path d="M12 9v6M9 13l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  },
+                ].map(t=>{
+                  const sp     = SP_TYPES.find(s=>s.id===t.type)||SP_TYPES[1];
+                  const active = activeType.id===t.type;
+                  return (
+                    <button key={t.type} onClick={()=>setType(t.type)}
+                      style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:3, padding:"8px 0", minWidth:54, background:active?`${sp.color}12`:"transparent", border:"none", borderBottom:`2.5px solid ${active?sp.color:"transparent"}`, borderTop:`2.5px solid transparent`, cursor:"pointer", flexShrink:0, transition:"all 0.13s", color:active?sp.color:C.grey }}>
+                      <span style={{ opacity:active?1:0.5, transition:"opacity 0.13s" }}>{t.svg}</span>
+                      <span style={{ fontSize:7.5, letterSpacing:"0.1em", fontFamily:"'Rajdhani',sans-serif", fontWeight:700 }}>{t.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Go to Tools */}
+              <button onClick={()=>setShowQuickInsert(v=>!v)}
+                style={{ display:"flex", flexDirection:"column", justifyContent:"center", alignItems:"flex-start", padding:"8px 10px", background:"transparent", border:"none", borderLeft:`1px solid ${C.border}`, cursor:"pointer", flexShrink:0, gap:1 }}>
+                <span style={{ fontSize:8, color:C.greyLight, fontFamily:"'Rajdhani',sans-serif", fontWeight:500, letterSpacing:"0.05em", lineHeight:1.4 }}>Go to</span>
+                <span style={{ fontSize:10, color:C.white, fontFamily:"'Rajdhani',sans-serif", fontWeight:700, letterSpacing:"0.05em" }}>Tools</span>
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── NOTES TAB ── */}
+      {tab==="notes" && (
+        <>
+          <textarea
+            value={notes}
+            onChange={e=>setNotes(e.target.value)}
+            autoFocus
+            placeholder={"Chapter notes, research, ideas, character beats...\n\nThis is your scratch pad for this chapter — anything that helps you write it."}
+            style={{ flex:1, minHeight:0, width:"100%", background:"transparent", border:"none", resize:"none", color:C.white, fontFamily:"'Special Elite',serif", fontSize:16, lineHeight:1.95, padding:"22px 22px", outline:"none", overflowY:"scroll", WebkitOverflowScrolling:"touch", paddingBottom:"max(30px,env(safe-area-inset-bottom,30px))" }}
+          />
+          <div style={{ background:C.panel, borderTop:`1px solid ${C.border}`, padding:"6px 18px", paddingBottom:"max(6px,env(safe-area-inset-bottom,6px))", fontSize:9, color:C.muted, textAlign:"right", letterSpacing:"0.1em", flexShrink:0 }}>
+            {notesWords} words
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function DossierDetail({ story, onChange, onBack, onDelete }) {
   const [activeSheet,   setActiveSheet]   = useState(null);
   const [activeSection, setActiveSection] = useState(null);
@@ -995,36 +1424,9 @@ function DossierDetail({ story, onChange, onBack, onDelete }) {
   const openSheet  = (name) => setActiveSheet(name);
   const closeSheet = ()     => setActiveSheet(null);
 
-  // Chapter writer open
+  // Chapter writer open — full screenplay format
   if (activeChapter) {
-    return (
-      <div style={{ position:"fixed", inset:0, background:C.bg, zIndex:300, display:"flex", flexDirection:"column", animation:"fadeIn 0.18s ease both" }}>
-        <div style={{ background:C.panel, borderBottom:`1px solid ${C.border}`, padding:"12px 18px", paddingTop:"max(12px,env(safe-area-inset-top,12px))", display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
-          <button onClick={()=>saveChapterFromDetail(activeChapter)}
-            style={{ background:"transparent", border:"none", color:C.blue, fontSize:13, cursor:"pointer", letterSpacing:"0.1em", padding:0, flexShrink:0 }}>
-            ‹ BACK
-          </button>
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontFamily:"'Special Elite',serif", fontSize:14, color:C.white, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{activeChapter.title}</div>
-            <div style={{ fontSize:8, color:C.muted, letterSpacing:"0.1em", marginTop:2 }}>{activeChapter.done?"✓ COMPLETE":"IN PROGRESS"}</div>
-          </div>
-          <button onClick={()=>setActiveChapter({...activeChapter,done:!activeChapter.done})}
-            style={{ background:activeChapter.done?"rgba(80,170,96,0.15)":"transparent", border:`1px solid ${activeChapter.done?C.green:C.border}`, borderRadius:8, padding:"5px 10px", color:activeChapter.done?C.green:C.grey, fontSize:9, letterSpacing:"0.12em", cursor:"pointer", flexShrink:0 }}>
-            {activeChapter.done?"✓ DONE":"MARK DONE"}
-          </button>
-        </div>
-        <textarea
-          value={activeChapter.content||""}
-          onChange={e=>setActiveChapter({...activeChapter,content:e.target.value})}
-          autoFocus
-          placeholder={`Write notes for "${activeChapter.title}" here...\n\nScene ideas, dialogue, character beats, research — anything that belongs in this chapter.`}
-          style={{ flex:1, minHeight:0, width:"100%", background:"transparent", border:"none", resize:"none", color:C.white, fontFamily:"'Special Elite',serif", fontSize:16, lineHeight:1.95, padding:"22px 22px", outline:"none", overflowY:"scroll", WebkitOverflowScrolling:"touch", paddingBottom:"max(30px,env(safe-area-inset-bottom,30px))" }}
-        />
-        <div style={{ background:C.panel, borderTop:`1px solid ${C.border}`, padding:"6px 18px", paddingBottom:"max(6px,env(safe-area-inset-bottom,6px))", fontSize:9, color:C.muted, textAlign:"right", letterSpacing:"0.1em", flexShrink:0 }}>
-          {(activeChapter.content||"").split(/\s+/).filter(Boolean).length} words
-        </div>
-      </div>
-    );
+    return <ScreenplayWriter chapter={activeChapter} onSave={saveChapterFromDetail}/>;
   }
 
   // Section writer open
