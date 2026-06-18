@@ -348,7 +348,7 @@ function BootSequence({ onComplete }) {
   }, [done]);
 
   return (
-    <div style={{ height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"32px 24px", animation:"flicker 8s infinite", textAlign:"center" }}>
+    <div style={{ height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"32px 24px", paddingTop:"max(52px,calc(env(safe-area-inset-top,0px)+32px))", animation:"flicker 8s infinite", textAlign:"center" }}>
       <EDLogo size={60} color={C.silver} glow/>
       <h1 style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:20, fontWeight:700, letterSpacing:"0.45em", color:C.amber, marginTop:14, marginBottom:4, textAlign:"center" }}>
         THE ECHELON DIRECTORATE
@@ -711,10 +711,22 @@ function ChaptersSheet({ story, onUpdate, onClose }) {
                   style={{ width:18, height:18, border:`2px solid ${ch.done?C.blue:C.muted}`, borderRadius:4, background:ch.done?C.blue:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, cursor:"pointer", transition:"all 0.12s" }}>
                   {ch.done && <span style={{ color:C.bg, fontSize:10, fontWeight:900 }}>✓</span>}
                 </div>
-                <div onClick={()=>setActiveChapter({...ch})} style={{ flex:1, cursor:"pointer" }}>
+                <div onClick={()=>setActiveChapter({
+                    ...ch,
+                    // Always ensure blocks array exists for ScreenplayWriter
+                    blocks: ch.blocks && ch.blocks.length>0
+                      ? ch.blocks
+                      : ch.content
+                        ? [{ id:Date.now(), type:"action", text:ch.content }]
+                        : [{ id:Date.now(), type:"scene",  text:"" }],
+                  })} style={{ flex:1, cursor:"pointer" }}>
                   <div style={{ fontSize:13, color:ch.done?C.greyLight:C.white, textDecoration:ch.done?"line-through":"none" }}>{ch.title}</div>
-                  <div style={{ fontSize:9, color:C.muted, marginTop:3, letterSpacing:"0.06em", fontStyle:(ch.content?"normal":"italic") }}>
-                    {ch.content ? `${ch.content.split(/\s+/).filter(Boolean).length} words · tap to edit` : "tap to write notes"}
+                  <div style={{ fontSize:9, color:C.muted, marginTop:3, letterSpacing:"0.06em", fontStyle:((ch.blocks&&ch.blocks.length>0)||ch.content?"normal":"italic") }}>
+                    {(ch.blocks&&ch.blocks.length>0)
+                      ? `${ch.blocks.reduce((a,b)=>a+b.text.split(/\s+/).filter(Boolean).length,0)} words · tap to write screenplay`
+                      : ch.content
+                        ? `${ch.content.split(/\s+/).filter(Boolean).length} words · tap to edit`
+                        : "tap to write screenplay"}
                   </div>
                 </div>
                 <span onClick={()=>setActiveChapter({...ch})} style={{ color:C.blue, fontSize:16, cursor:"pointer", flexShrink:0 }}>›</span>
@@ -1056,7 +1068,33 @@ function ScreenplayWriter({ chapter, onSave }) {
     setTimeout(()=>textRefs.current[activeBlock]?.focus(),50);
   };
 
-  // Track all character names used so far for autocomplete
+  // Export blocks as WriterDuet-compatible plain text
+  const exportForWriterDuet = () => {
+    const lines = blocks.map(b => {
+      const text = b.text.trim();
+      if (!text) return "";
+      switch(b.type) {
+        case "scene":         return text.toUpperCase();
+        case "action":        return text;
+        case "character":     return "                    " + text.toUpperCase();
+        case "parenthetical": return "                " + (text.startsWith("(") ? text : `(${text})`);
+        case "dialogue":      return "          " + text;
+        case "transition":    return "                                        " + text.toUpperCase();
+        case "shot":          return text.toUpperCase();
+        default:              return text;
+      }
+    }).filter(l => l !== null);
+
+    const formatted = lines.join("\n\n");
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(formatted).then(()=>{
+        setCopied(true);
+        setTimeout(()=>setCopied(false), 2000);
+      });
+    }
+  };
+
+  const [copied, setCopied] = useState(false);
   const knownCharacters = [...new Set(
     blocks
       .filter(b=>b.type==="character" && b.text.trim())
@@ -1138,6 +1176,13 @@ function ScreenplayWriter({ chapter, onSave }) {
             {tab==="screenplay" ? `${wordCount}w · ${blocks.length} blocks` : `${notesWords}w notes`}
           </div>
         </div>
+        {/* WriterDuet export button — only on screenplay tab */}
+        {tab==="screenplay" && (
+          <button onClick={exportForWriterDuet}
+            style={{ background:copied?"rgba(80,170,96,0.2)":"rgba(79,195,247,0.08)", border:`1px solid ${copied?C.green:C.border}`, borderRadius:7, padding:"4px 9px", color:copied?C.green:C.greyLight, fontSize:8, letterSpacing:"0.1em", cursor:"pointer", flexShrink:0, fontFamily:"'Rajdhani',sans-serif", fontWeight:700, transition:"all 0.2s", marginRight:4 }}>
+            {copied ? "✓ COPIED" : "EXPORT"}
+          </button>
+        )}
         <button onClick={()=>onSave({...chapter,blocks,content:blocks.map(b=>b.text).join("\n"),notes,done:!chapter.done})}
           style={{ background:chapter.done?"rgba(80,170,96,0.15)":"transparent", border:`1px solid ${chapter.done?C.green:C.border}`, borderRadius:8, padding:"4px 9px", color:chapter.done?C.green:C.grey, fontSize:9, letterSpacing:"0.1em", cursor:"pointer", flexShrink:0 }}>
           {chapter.done?"✓ DONE":"MARK DONE"}
@@ -1548,7 +1593,14 @@ function DossierDetail({ story, onChange, onBack, onDelete }) {
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                 {story.chapters.map(ch=>(
-                  <div key={ch.id} onClick={()=>setActiveChapter({...ch})}
+                  <div key={ch.id} onClick={()=>setActiveChapter({
+                      ...ch,
+                      blocks: ch.blocks && ch.blocks.length>0
+                        ? ch.blocks
+                        : ch.content
+                          ? [{ id:Date.now(), type:"action", text:ch.content }]
+                          : [{ id:Date.now(), type:"scene",  text:"" }],
+                    })}
                     style={{ background:ch.done?"rgba(79,195,247,0.06)":"rgba(255,255,255,0.03)", border:`1px solid ${ch.done?C.blueDim:C.border}`, borderRadius:14, padding:"16px 18px", cursor:"pointer", display:"flex", alignItems:"center", gap:14 }}>
                     {/* Big checkbox */}
                     <div style={{ width:24, height:24, border:`2px solid ${ch.done?C.blue:C.muted}`, borderRadius:6, background:ch.done?C.blue:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, transition:"all 0.15s" }}>
