@@ -511,7 +511,7 @@ function DossierList({ stories, onOpen, onNew, onDelete }) {
   });
 
   return (
-    <div style={{ height:"100%", display:"flex", flexDirection:"column", background:C.bg }}>
+    <div style={{ position:"fixed", inset:0, display:"flex", flexDirection:"column", background:C.bg }}>
 
       {/* Header */}
       <div style={{ background:C.panel, borderBottom:`1px solid ${C.border}`, padding:"14px 18px 12px", paddingTop:"max(14px,env(safe-area-inset-top,14px))" }}>
@@ -554,7 +554,7 @@ function DossierList({ stories, onOpen, onNew, onDelete }) {
       </div>
 
       {/* List */}
-      <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch" }}>
+      <div style={{ flex:1, minHeight:0, overflowY:"auto", WebkitOverflowScrolling:"touch" }}>
         {filtered.length===0 && (
           <p style={{ padding:40, textAlign:"center", color:C.muted, fontSize:13, fontStyle:"italic" }}>
             {search ? "No dossiers match your search." : "No dossiers yet. Tap + to create one."}
@@ -1026,15 +1026,23 @@ function ScreenplayWriter({ chapter, onSave }) {
   const blockIdRef = useRef(Date.now() + 9999);
   const toolbarTimer = useRef(null);
 
-  const wordCount = blocks.reduce((acc,b)=>acc+b.text.split(/\s+/).filter(Boolean).length,0);
+  const wordCount  = blocks.reduce((acc,b)=>acc+b.text.split(/\s+/).filter(Boolean).length,0);
   const notesWords = notes.split(/\s+/).filter(Boolean).length;
+  const isEmpty    = wordCount === 0;
 
   const resetTimer = () => {
     setShowToolbar(true);
     clearTimeout(toolbarTimer.current);
-    toolbarTimer.current = setTimeout(()=>setShowToolbar(false), 5000);
+    // Never auto-hide on empty chapters — always keep toolbar visible
+    if (!isEmpty) {
+      toolbarTimer.current = setTimeout(()=>setShowToolbar(false), 8000);
+    }
   };
-  useEffect(()=>{ resetTimer(); return()=>clearTimeout(toolbarTimer.current); },[]);
+  useEffect(()=>{
+    // Always show toolbar on mount
+    setShowToolbar(true);
+    return ()=>clearTimeout(toolbarTimer.current);
+  },[]);
 
   const handleSave = () => {
     const plainText = blocks.map(b=>b.text).join("\n");
@@ -1261,7 +1269,7 @@ function ScreenplayWriter({ chapter, onSave }) {
           </div>
 
           {/* ── TOOLBAR ── */}
-          <div style={{ flexShrink:0, transition:"opacity 0.3s,transform 0.3s", opacity:showToolbar?1:0, transform:showToolbar?"translateY(0)":"translateY(6px)", pointerEvents:showToolbar?"auto":"none" }}>
+          <div style={{ flexShrink:0, transition:"opacity 0.3s,transform 0.3s", opacity:(showToolbar||isEmpty)?1:0, transform:(showToolbar||isEmpty)?"translateY(0)":"translateY(6px)", pointerEvents:(showToolbar||isEmpty)?"auto":"none" }}>
 
             {/* Quick insert strip */}
             {showQuickInsert && (
@@ -1413,6 +1421,459 @@ function ScreenplayWriter({ chapter, onSave }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CHARACTER ARC TEMPLATES
+// ─────────────────────────────────────────────────────────────────────────────
+const ARC_TEMPLATES = {
+  heros_journey: {
+    label:"HERO'S JOURNEY",
+    fields:[
+      { id:"want",     label:"WANT",           hint:"What does the character think they want?"          },
+      { id:"need",     label:"NEED",           hint:"What do they actually need (they don't know yet)?" },
+      { id:"ghost",    label:"GHOST",          hint:"The haunting past event driving their behavior"     },
+      { id:"wound",    label:"WOUND",          hint:"The emotional injury they're still carrying"       },
+      { id:"flaw",     label:"FLAW",           hint:"How the wound manifests as a character flaw"       },
+      { id:"lie",      label:"THE LIE",        hint:"The false belief they hold about themselves/world"  },
+      { id:"truth",    label:"THE TRUTH",      hint:"What they must learn to complete their arc"        },
+    ],
+  },
+  simple_arc: {
+    label:"CHARACTER ARC",
+    fields:[
+      { id:"begin",    label:"BEGINNING STATE", hint:"Who are they at the start?"                      },
+      { id:"trigger",  label:"INCITING WOUND",  hint:"What event forces them to change?"               },
+      { id:"midpoint", label:"MIDPOINT SHIFT",  hint:"What changes halfway through?"                   },
+      { id:"low",      label:"ALL IS LOST",     hint:"Their darkest moment — what do they lose?"       },
+      { id:"end",      label:"END STATE",       hint:"Who are they by the final scene?"                },
+    ],
+  },
+  full_breakdown: {
+    label:"FULL BREAKDOWN",
+    fields:[
+      { id:"backstory",  label:"BACKSTORY",        hint:"Key events that shaped who they are"          },
+      { id:"motivation", label:"MOTIVATION",        hint:"What drives every decision they make?"        },
+      { id:"flaw",       label:"FLAW",              hint:"Their greatest weakness"                      },
+      { id:"desire",     label:"DESIRE",            hint:"What they're chasing on the surface"          },
+      { id:"lie",        label:"LIE THEY BELIEVE",  hint:"The false belief holding them back"           },
+      { id:"truth",      label:"TRUTH THEY LEARN",  hint:"The realization that sets them free"          },
+      { id:"arc",        label:"ARC SUMMARY",       hint:"One sentence: how do they change?"            },
+      { id:"voice",      label:"VOICE & MANNER",    hint:"How do they speak? What's their energy?"      },
+      { id:"contrast",   label:"CONTRAST",          hint:"Who is their foil in the story?"              },
+    ],
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STORY ARC STRUCTURES
+// ─────────────────────────────────────────────────────────────────────────────
+const STORY_ARCS = [
+  {
+    id:"save_the_cat", label:"SAVE THE CAT", author:"Blake Snyder", color:"#4fc3f7",
+    desc:"The industry-standard beat sheet. 15 beats across 3 acts.",
+    beats:[
+      { beat:"Opening Image",       page:"1",      hint:"A snapshot of the hero's world before the journey begins." },
+      { beat:"Theme Stated",        page:"5",      hint:"Someone states what the movie is about — the hero usually ignores it." },
+      { beat:"Set-Up",              page:"1-10",   hint:"Establish the hero's world, flaws, and what needs to change." },
+      { beat:"Catalyst",            page:"12",     hint:"The inciting incident that disrupts the hero's world." },
+      { beat:"Debate",              page:"12-25",  hint:"The hero hesitates — should they go on the journey?" },
+      { beat:"Break Into Two",      page:"25",     hint:"The hero makes an active choice and enters a new world." },
+      { beat:"B Story",             page:"30",     hint:"A new character or relationship that carries the theme." },
+      { beat:"Fun and Games",       page:"30-55",  hint:"The promise of the premise — the core of what the movie is about." },
+      { beat:"Midpoint",            page:"55",     hint:"A false victory or false defeat — stakes are raised." },
+      { beat:"Bad Guys Close In",   page:"55-75",  hint:"The opposition tightens. Internal and external pressure builds." },
+      { beat:"All Is Lost",         page:"75",     hint:"The lowest point. The hero loses everything — a whiff of death." },
+      { beat:"Dark Night of Soul",  page:"75-85",  hint:"The hero wallows in loss. What did they learn?" },
+      { beat:"Break Into Three",    page:"85",     hint:"A new idea or help arrives — the hero finds the solution." },
+      { beat:"Finale",              page:"85-110", hint:"The hero applies the new skill and defeats the villain." },
+      { beat:"Final Image",         page:"110",    hint:"Mirror of the opening image — shows how the world has changed." },
+    ],
+  },
+  {
+    id:"tragedy", label:"THE TRAGIC ARC", author:"Aristotle / Shakespeare", color:"#cc3333",
+    desc:"The fall of a hero through a fatal flaw. Catharsis through suffering.",
+    beats:[
+      { beat:"Noble Beginning",        page:"Act 1", hint:"Establish the hero's greatness — power, virtue, or status." },
+      { beat:"The Fatal Flaw",         page:"Act 1", hint:"Introduce the hamartia — pride, ambition, jealousy, love." },
+      { beat:"The Temptation",         page:"Act 1", hint:"The world offers something the hero's flaw makes them want." },
+      { beat:"The Choice",             page:"Act 2", hint:"The hero makes a decision driven by their flaw." },
+      { beat:"The Descent",            page:"Act 2", hint:"Consequences spiral. The hero doubles down." },
+      { beat:"The Point of No Return", page:"Act 2", hint:"The moment it becomes irreversible." },
+      { beat:"The Reversal",           page:"Act 3", hint:"Peripeteia — fortune flips completely." },
+      { beat:"Recognition",            page:"Act 3", hint:"Anagnorisis — the hero sees the truth too late." },
+      { beat:"The Fall",               page:"Act 3", hint:"Destruction — death, ruin, or total loss." },
+      { beat:"Catharsis",              page:"Act 3", hint:"The audience feels pity and fear — and is purged of it." },
+    ],
+  },
+  {
+    id:"flat_arc", label:"FLAT ARC (POSITIVE)", author:"K.M. Weiland", color:"#50aa60",
+    desc:"The hero does not change — they change the world around them.",
+    beats:[
+      { beat:"The Truth",          page:"Act 1", hint:"The hero already holds a truth the world has forgotten." },
+      { beat:"The Lie of the World",page:"Act 1",hint:"The surrounding world believes something false." },
+      { beat:"The Moral Choice",   page:"Act 1", hint:"The hero is pressured to abandon their truth — they refuse." },
+      { beat:"Testing the Truth",  page:"Act 2", hint:"The hero applies their truth against opposition." },
+      { beat:"The Sacrifice",      page:"Act 2", hint:"Holding to their truth costs them something real." },
+      { beat:"Inspiring Others",   page:"Act 2", hint:"Others begin to believe because of the hero." },
+      { beat:"The Dark Moment",    page:"Act 3", hint:"Even the hero doubts — the truth is hardest to hold now." },
+      { beat:"Reaffirmation",      page:"Act 3", hint:"The hero doubles down on their truth at highest cost." },
+      { beat:"World Changes",      page:"Act 3", hint:"The world accepts the truth. The lie is defeated." },
+    ],
+  },
+  {
+    id:"corruption", label:"CORRUPTION ARC", author:"K.M. Weiland", color:"#9b59b6",
+    desc:"The hero begins good and ends destroyed by their own choices.",
+    beats:[
+      { beat:"The Ghost",          page:"Act 1", hint:"Past event that made them vulnerable to the lie." },
+      { beat:"The Lie",            page:"Act 1", hint:"The false belief they already hold entering the story." },
+      { beat:"The Want",           page:"Act 1", hint:"What they are chasing — fueled by the lie." },
+      { beat:"The First Choice",   page:"Act 1", hint:"They choose the wrong thing — but it seems small." },
+      { beat:"The Escalation",     page:"Act 2", hint:"Each choice compounds. The lie grows stronger." },
+      { beat:"The Moment of Grace",page:"Act 2", hint:"One last chance to turn back — they refuse it." },
+      { beat:"The Cost",           page:"Act 2", hint:"They lose something good they can never get back." },
+      { beat:"Full Corruption",    page:"Act 3", hint:"They become what they feared or hated." },
+      { beat:"The Consequence",    page:"Act 3", hint:"Destruction — internal, external, or both." },
+    ],
+  },
+  {
+    id:"redemption", label:"REDEMPTION ARC", author:"Classic Structure", color:"#e8a020",
+    desc:"The hero falls, hits bottom, and earns their way back through sacrifice.",
+    beats:[
+      { beat:"The Fall",           page:"Act 1", hint:"Who were they before? What did they lose or destroy?" },
+      { beat:"The Lie",            page:"Act 1", hint:"The false belief that caused their fall." },
+      { beat:"Rock Bottom",        page:"Act 1", hint:"Where we meet them — at their lowest." },
+      { beat:"The Catalyst",       page:"Act 1", hint:"Something cracks the lie open — a person, a moment." },
+      { beat:"Resistance",         page:"Act 2", hint:"They fight change — it is easier to stay broken." },
+      { beat:"First Steps",        page:"Act 2", hint:"Small, imperfect choices toward something better." },
+      { beat:"The Setback",        page:"Act 2", hint:"They slip back — it seems hopeless again." },
+      { beat:"The Truth",          page:"Act 3", hint:"They finally see and accept what the lie cost them." },
+      { beat:"The Sacrifice",      page:"Act 3", hint:"They give something up to earn redemption." },
+      { beat:"The New Person",     page:"Act 3", hint:"Who they become — different, harder, more whole." },
+    ],
+  },
+  {
+    id:"disillusionment", label:"DISILLUSIONMENT ARC", author:"K.M. Weiland", color:"#7a9aaa",
+    desc:"The hero gives up a positive belief and learns a harder truth.",
+    beats:[
+      { beat:"The Belief",         page:"Act 1", hint:"The hero genuinely believes something good and hopeful." },
+      { beat:"The World",          page:"Act 1", hint:"The world seems to confirm their belief at first." },
+      { beat:"First Cracks",       page:"Act 2", hint:"Evidence appears that the belief may be wrong." },
+      { beat:"Doubling Down",      page:"Act 2", hint:"They fight to hold the belief — it costs them." },
+      { beat:"The Shattering",     page:"Act 2", hint:"The belief is proven false beyond denial." },
+      { beat:"Grief",              page:"Act 3", hint:"They mourn what they have lost — the innocence." },
+      { beat:"The Harder Truth",   page:"Act 3", hint:"What replaces the belief — more complex, more real." },
+      { beat:"New Equilibrium",    page:"Act 3", hint:"They survive. Wiser. Sadder. Still standing." },
+    ],
+  },
+];
+
+function CharacterArcSheet({ story, onUpdate, onClose }) {
+  const [tab,           setTab]           = useState("characters");
+  const [characters,    setCharacters]    = useState(story.characters||[]);
+  const [storyArcId,    setStoryArcId]    = useState(story.storyArcId||null);
+  const [storyArcNotes, setStoryArcNotes] = useState(story.storyArcNotes||{});
+  const [activeChar,    setActiveChar]    = useState(null);
+  const [activeBeat,    setActiveBeat]    = useState(null);
+  const [addingChar,    setAddingChar]    = useState(false);
+  const [newCharName,   setNewCharName]   = useState("");
+  const charId = useRef(Date.now()+77000);
+
+  const saveCharacters = (next) => { setCharacters(next); onUpdate({ characters:next }); };
+  const saveStoryArc   = (arcId) => { setStoryArcId(arcId); onUpdate({ storyArcId:arcId }); };
+  const saveBeatNote   = (arcId, beatIndex, text) => {
+    const key  = `${arcId}_${beatIndex}`;
+    const next = { ...storyArcNotes, [key]:text };
+    setStoryArcNotes(next);
+    onUpdate({ storyArcNotes:next });
+  };
+
+  const addCharacter = (templateKey) => {
+    if (!newCharName.trim()) return;
+    const template = ARC_TEMPLATES[templateKey];
+    const fields   = Object.fromEntries(template.fields.map(f=>[f.id,""]));
+    const ch = { id:charId.current++, name:newCharName.trim().toUpperCase(), template:templateKey, fields };
+    const next = [...characters, ch];
+    saveCharacters(next);
+    setActiveChar(ch);
+    setAddingChar(false);
+    setNewCharName("");
+  };
+
+  const deleteCharacter = (id) => {
+    const next = characters.filter(c=>c.id!==id);
+    saveCharacters(next);
+    if (activeChar?.id===id) setActiveChar(null);
+  };
+
+  const updateField = (fieldId, value) => {
+    const updated = { ...activeChar, fields:{ ...activeChar.fields, [fieldId]:value } };
+    const next    = characters.map(c=>c.id===updated.id?updated:c);
+    setCharacters(next);
+    onUpdate({ characters:next });
+    setActiveChar(updated);
+  };
+
+  const selectedArc = STORY_ARCS.find(a=>a.id===storyArcId);
+
+  // ── Beat note editor ──
+  if (activeBeat) {
+    const arc  = STORY_ARCS.find(a=>a.id===activeBeat.arcId);
+    const beat = arc?.beats[activeBeat.beatIndex];
+    const key  = `${activeBeat.arcId}_${activeBeat.beatIndex}`;
+    return (
+      <div style={{ position:"fixed", inset:0, background:C.bg, zIndex:400, display:"flex", flexDirection:"column", animation:"fadeIn 0.18s ease both" }}>
+        <div style={{ background:C.panel, borderBottom:`1px solid ${C.border}`, padding:"12px 18px", paddingTop:"max(12px,env(safe-area-inset-top,12px))", display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+          <button onClick={()=>setActiveBeat(null)} style={{ background:"transparent", border:"none", color:C.blue, fontSize:13, cursor:"pointer", letterSpacing:"0.1em", padding:0, flexShrink:0 }}>
+            ‹ BACK
+          </button>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:14, fontWeight:700, color:arc?.color||C.amber, letterSpacing:"0.15em" }}>{beat?.beat}</div>
+            <div style={{ fontSize:8, color:C.muted, letterSpacing:"0.1em", marginTop:1 }}>p. {beat?.page} · {arc?.label}</div>
+          </div>
+        </div>
+        <div style={{ padding:"14px 18px 10px", background:"rgba(255,255,255,0.02)", borderBottom:`1px solid ${C.border}`, flexShrink:0 }}>
+          <p style={{ fontSize:12, color:C.greyLight, fontStyle:"italic", lineHeight:1.6 }}>{beat?.hint}</p>
+        </div>
+        <textarea
+          value={storyArcNotes[key]||""}
+          onChange={e=>saveBeatNote(activeBeat.arcId, activeBeat.beatIndex, e.target.value)}
+          autoFocus
+          placeholder={`Write your notes for "${beat?.beat}" here...`}
+          style={{ flex:1, minHeight:0, width:"100%", background:"transparent", border:"none", resize:"none", color:C.white, fontFamily:"'Special Elite',serif", fontSize:16, lineHeight:1.9, padding:"22px 22px", outline:"none", overflowY:"scroll", WebkitOverflowScrolling:"touch", paddingBottom:"max(30px,env(safe-area-inset-bottom,30px))" }}
+        />
+        <div style={{ background:C.panel, borderTop:`1px solid ${C.border}`, padding:"6px 18px", paddingBottom:"max(6px,env(safe-area-inset-bottom,6px))", fontSize:9, color:C.muted, textAlign:"right", letterSpacing:"0.1em", flexShrink:0 }}>
+          {(storyArcNotes[key]||"").split(/\s+/).filter(Boolean).length} words
+        </div>
+      </div>
+    );
+  }
+
+  // ── Character full profile ──
+  if (activeChar) {
+    const template   = ARC_TEMPLATES[activeChar.template]||ARC_TEMPLATES.simple_arc;
+    const arc        = STORY_ARCS.find(a=>a.id===storyArcId);
+    const charNotes  = activeChar.beatNotes||{};
+
+    const updateBeatNote = (beatIndex, text) => {
+      const updated = { ...activeChar, beatNotes:{ ...charNotes, [beatIndex]:text } };
+      const next    = characters.map(c=>c.id===updated.id?updated:c);
+      setCharacters(next);
+      onUpdate({ characters:next });
+      setActiveChar(updated);
+    };
+
+    return (
+      <div style={{ position:"fixed", inset:0, background:C.bg, zIndex:300, display:"flex", flexDirection:"column", animation:"fadeIn 0.18s ease both" }}>
+        {/* Header */}
+        <div style={{ background:C.panel, borderBottom:`1px solid ${C.border}`, padding:"12px 18px", paddingTop:"max(12px,env(safe-area-inset-top,12px))", display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+          <button onClick={()=>setActiveChar(null)} style={{ background:"transparent", border:"none", color:C.blue, fontSize:13, cursor:"pointer", letterSpacing:"0.1em", padding:0, flexShrink:0 }}>‹ BACK</button>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:16, fontWeight:700, color:C.amber, letterSpacing:"0.2em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{activeChar.name}</div>
+            <div style={{ fontSize:8, color:C.muted, letterSpacing:"0.15em", marginTop:1 }}>{template.label}</div>
+          </div>
+          <button onClick={()=>deleteCharacter(activeChar.id)}
+            style={{ background:"transparent", border:`1px solid ${C.red}44`, borderRadius:7, padding:"4px 9px", color:C.red, fontSize:9, letterSpacing:"0.1em", cursor:"pointer" }}>
+            REMOVE
+          </button>
+        </div>
+
+        {/* Scrollable profile body */}
+        <div style={{ flex:1, minHeight:0, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"20px 18px 50px" }}>
+
+          {/* ── ARC TEMPLATE FIELDS ── */}
+          <div style={{ fontSize:9, color:C.grey, letterSpacing:"0.22em", fontFamily:"'Rajdhani',sans-serif", fontWeight:600, marginBottom:14 }}>CHARACTER PROFILE</div>
+          {template.fields.map(f=>(
+            <div key={f.id} style={{ marginBottom:16 }}>
+              <div style={{ fontSize:9, color:C.amber, letterSpacing:"0.2em", fontFamily:"'Rajdhani',sans-serif", fontWeight:700, marginBottom:5 }}>{f.label}</div>
+              <textarea value={activeChar.fields[f.id]||""} onChange={e=>updateField(f.id, e.target.value)} placeholder={f.hint} rows={2}
+                style={{ width:"100%", background:"rgba(255,255,255,0.03)", border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 12px", color:C.white, fontFamily:"'Special Elite',serif", fontSize:14, lineHeight:1.8, outline:"none", resize:"none" }}/>
+            </div>
+          ))}
+
+          {/* ── STORY ARC BEAT NOTES FOR THIS CHARACTER ── */}
+          {arc && (
+            <>
+              <div style={{ height:1, background:C.border, margin:"22px 0 18px" }}/>
+              <div style={{ fontSize:9, color:C.grey, letterSpacing:"0.22em", fontFamily:"'Rajdhani',sans-serif", fontWeight:600, marginBottom:6 }}>
+                {arc.label} — CHARACTER MOMENTS
+              </div>
+              <div style={{ fontSize:10, color:C.muted, fontStyle:"italic", marginBottom:14, lineHeight:1.5 }}>
+                What is {activeChar.name} thinking, feeling, or doing at each beat?
+              </div>
+              {arc.beats.map((beat,i)=>{
+                const note = charNotes[i]||"";
+                return (
+                  <div key={i} style={{ marginBottom:14 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:5 }}>
+                      <div style={{ width:20, height:20, borderRadius:5, background:note?`${arc.color}22`:"rgba(255,255,255,0.04)", border:`1px solid ${note?arc.color:C.border}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                        <span style={{ fontSize:8, color:note?arc.color:C.muted, fontFamily:"'Rajdhani',sans-serif", fontWeight:700 }}>{i+1}</span>
+                      </div>
+                      <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:11, fontWeight:700, color:note?arc.color:C.greyLight, letterSpacing:"0.1em" }}>{beat.beat}</div>
+                      <div style={{ fontSize:8, color:C.muted, marginLeft:"auto" }}>p. {beat.page}</div>
+                    </div>
+                    <textarea value={note} onChange={e=>updateBeatNote(i, e.target.value)}
+                      placeholder={beat.hint}
+                      rows={2}
+                      style={{ width:"100%", background:"rgba(255,255,255,0.02)", border:`1px solid ${note?arc.color+"44":C.border}`, borderRadius:8, padding:"9px 12px", color:C.white, fontFamily:"'Special Elite',serif", fontSize:14, lineHeight:1.7, outline:"none", resize:"none" }}/>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {/* If no story arc selected yet */}
+          {!arc && (
+            <>
+              <div style={{ height:1, background:C.border, margin:"22px 0 18px" }}/>
+              <div style={{ background:"rgba(255,255,255,0.02)", border:`1px solid ${C.border}`, borderRadius:10, padding:"16px", textAlign:"center" }}>
+                <div style={{ fontSize:10, color:C.muted, letterSpacing:"0.1em", marginBottom:6 }}>NO STORY ARC SELECTED</div>
+                <div style={{ fontSize:11, color:C.muted, fontStyle:"italic", lineHeight:1.5 }}>Go to the STORY ARC tab to pick a structure — then each beat will appear here so you can track what {activeChar.name} is doing at every moment.</div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main sheet ──
+  return (
+    <BottomSheet title="CHARACTER ARCS" onClose={onClose}>
+      {/* Tab switcher */}
+      <div style={{ display:"flex", marginBottom:16, background:"rgba(255,255,255,0.03)", borderRadius:10, padding:3 }}>
+        {[{id:"characters",label:"CHARACTERS"},{id:"story_arc",label:"STORY ARC"}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)}
+            style={{ flex:1, padding:"8px 0", background:tab===t.id?C.blueFaint:"transparent", border:`1px solid ${tab===t.id?C.blue:"transparent"}`, borderRadius:8, color:tab===t.id?C.blue:C.grey, fontSize:10, letterSpacing:"0.12em", cursor:"pointer", fontFamily:"'Rajdhani',sans-serif", fontWeight:700, transition:"all 0.15s" }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── CHARACTERS TAB ── */}
+      {tab==="characters" && (
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {addingChar ? (
+            <div style={{ animation:"fadeUp 0.15s ease both" }}>
+              <div style={{ fontSize:9, color:C.grey, letterSpacing:"0.18em", marginBottom:8 }}>CHARACTER NAME</div>
+              <input value={newCharName} onChange={e=>setNewCharName(e.target.value)} placeholder="e.g. ANA VOSS" autoFocus
+                style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:`1px solid ${C.blue}`, borderRadius:8, padding:"10px 12px", color:C.white, fontFamily:"'Rajdhani',sans-serif", fontSize:16, outline:"none", marginBottom:12, letterSpacing:"0.1em" }}/>
+              <div style={{ fontSize:9, color:C.grey, letterSpacing:"0.18em", marginBottom:8 }}>CHOOSE TEMPLATE</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {Object.entries(ARC_TEMPLATES).map(([key,tmpl])=>(
+                  <button key={key} onClick={()=>addCharacter(key)}
+                    style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${C.borderBright}`, borderRadius:10, padding:"12px 16px", cursor:"pointer", textAlign:"left" }}>
+                    <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:13, fontWeight:700, color:C.amber, letterSpacing:"0.15em" }}>{tmpl.label}</div>
+                    <div style={{ fontSize:10, color:C.muted, marginTop:3 }}>{tmpl.fields.map(f=>f.label).join(" · ")}</div>
+                  </button>
+                ))}
+              </div>
+              <button onClick={()=>setAddingChar(false)} style={{ width:"100%", background:"transparent", border:`1px solid ${C.border}`, borderRadius:8, padding:"10px", color:C.grey, fontSize:10, letterSpacing:"0.15em", cursor:"pointer", marginTop:10 }}>CANCEL</button>
+            </div>
+          ) : (
+            <button onClick={()=>setAddingChar(true)} style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 14px", color:C.grey, fontSize:10, letterSpacing:"0.15em", cursor:"pointer" }}>
+              + ADD CHARACTER
+            </button>
+          )}
+          {characters.length===0 && !addingChar && (
+            <p style={{ fontSize:11, color:C.muted, fontStyle:"italic", textAlign:"center", padding:"10px 0" }}>No characters yet. Tap + Add Character to start.</p>
+          )}
+          {characters.map(ch=>{
+            const tmpl  = ARC_TEMPLATES[ch.template]||ARC_TEMPLATES.simple_arc;
+            const filled = Object.values(ch.fields).filter(v=>v.trim()).length;
+            const total  = tmpl.fields.length;
+            return (
+              <div key={ch.id} onClick={()=>setActiveChar(ch)}
+                style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${C.border}`, borderRadius:10, padding:"14px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:15, fontWeight:700, color:C.amber, letterSpacing:"0.15em" }}>{ch.name}</div>
+                  <div style={{ fontSize:9, color:C.muted, marginTop:3, letterSpacing:"0.1em" }}>{tmpl.label} · {filled}/{total} fields</div>
+                  {filled>0 && (
+                    <div style={{ height:2, background:C.blueFaint, borderRadius:1, overflow:"hidden", marginTop:7 }}>
+                      <div style={{ height:"100%", width:`${(filled/total)*100}%`, background:`linear-gradient(90deg,${C.amberDim},${C.amber})` }}/>
+                    </div>
+                  )}
+                </div>
+                <span style={{ color:C.blue, fontSize:18 }}>›</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── STORY ARC TAB ── */}
+      {tab==="story_arc" && (
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {!storyArcId ? (
+            <>
+              <p style={{ fontSize:11, color:C.muted, fontStyle:"italic", marginBottom:4, lineHeight:1.5 }}>
+                Choose the story arc structure that fits this story. You can write notes for each beat.
+              </p>
+              {STORY_ARCS.map(arc=>(
+                <button key={arc.id} onClick={()=>saveStoryArc(arc.id)}
+                  style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${arc.color}44`, borderRadius:10, padding:"14px 16px", cursor:"pointer", textAlign:"left" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+                    <div style={{ width:8, height:8, borderRadius:"50%", background:arc.color, flexShrink:0 }}/>
+                    <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:14, fontWeight:700, color:arc.color, letterSpacing:"0.15em" }}>{arc.label}</div>
+                  </div>
+                  <div style={{ fontSize:9, color:C.muted, letterSpacing:"0.08em", marginBottom:4 }}>by {arc.author}</div>
+                  <div style={{ fontSize:11, color:C.greyLight, lineHeight:1.5 }}>{arc.desc}</div>
+                  <div style={{ fontSize:9, color:C.muted, marginTop:6 }}>{arc.beats.length} beats</div>
+                </button>
+              ))}
+            </>
+          ) : (
+            <>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
+                <div>
+                  <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:14, fontWeight:700, color:selectedArc?.color||C.amber, letterSpacing:"0.15em" }}>{selectedArc?.label}</div>
+                  <div style={{ fontSize:9, color:C.muted, letterSpacing:"0.08em", marginTop:2 }}>by {selectedArc?.author} · {selectedArc?.beats.length} beats</div>
+                </div>
+                <button onClick={()=>saveStoryArc(null)}
+                  style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:7, padding:"4px 9px", color:C.grey, fontSize:9, letterSpacing:"0.1em", cursor:"pointer" }}>
+                  CHANGE
+                </button>
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
+                {selectedArc?.beats.map((beat,i)=>{
+                  const key  = `${storyArcId}_${i}`;
+                  const note = storyArcNotes[key]||"";
+                  const words = note.split(/\s+/).filter(Boolean).length;
+                  return (
+                    <div key={i} onClick={()=>setActiveBeat({ arcId:storyArcId, beatIndex:i })}
+                      style={{ background:note?"rgba(79,195,247,0.05)":"rgba(255,255,255,0.03)", border:`1px solid ${note?C.borderBright:C.border}`, borderRadius:10, padding:"12px 14px", cursor:"pointer", display:"flex", alignItems:"center", gap:10 }}>
+                      <div style={{ width:26, height:26, borderRadius:6, background:note?`${selectedArc.color}22`:"rgba(255,255,255,0.04)", border:`1px solid ${note?selectedArc.color:C.border}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                        <span style={{ fontSize:9, color:note?selectedArc.color:C.muted, fontFamily:"'Rajdhani',sans-serif", fontWeight:700 }}>{i+1}</span>
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:12, fontWeight:700, color:note?C.white:C.greyLight, letterSpacing:"0.1em" }}>{beat.beat}</div>
+                        <div style={{ fontSize:9, color:C.muted, marginTop:2 }}>
+                          {note ? `${words}w · p. ${beat.page}` : `p. ${beat.page} · tap to write`}
+                        </div>
+                      </div>
+                      <span style={{ color:note?C.blue:C.muted, fontSize:16 }}>›</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {selectedArc && (()=>{
+                const filled = selectedArc.beats.filter((_,i)=>storyArcNotes[`${storyArcId}_${i}`]?.trim()).length;
+                const total  = selectedArc.beats.length;
+                return filled>0 ? (
+                  <div style={{ marginTop:4 }}>
+                    <div style={{ fontSize:9, color:C.muted, letterSpacing:"0.1em", marginBottom:5 }}>{filled}/{total} BEATS WRITTEN</div>
+                    <div style={{ height:2, background:C.blueFaint, borderRadius:1, overflow:"hidden" }}>
+                      <div style={{ height:"100%", width:`${(filled/total)*100}%`, background:`linear-gradient(90deg,${selectedArc.color}88,${selectedArc.color})` }}/>
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+            </>
+          )}
+        </div>
+      )}
+    </BottomSheet>
+  );
+}
+
 function DossierDetail({ story, onChange, onBack, onDelete }) {
   const [activeSheet,   setActiveSheet]   = useState(null);
   const [activeSection, setActiveSection] = useState(null);
@@ -1481,11 +1942,12 @@ function DossierDetail({ story, onChange, onBack, onDelete }) {
 
   return (
     <>
-      {activeSheet==="chapters" && <ChaptersSheet story={story} onUpdate={update} onClose={closeSheet}/>}
-      {activeSheet==="evidence" && <EvidenceSheet story={story} onUpdate={update} onClose={closeSheet}/>}
-      {activeSheet==="info"     && <InfoSheet     story={story} onUpdate={update} onClose={closeSheet}/>}
+      {activeSheet==="chapters"   && <ChaptersSheet    story={story} onUpdate={update} onClose={closeSheet}/>}
+      {activeSheet==="evidence"   && <EvidenceSheet    story={story} onUpdate={update} onClose={closeSheet}/>}
+      {activeSheet==="info"       && <InfoSheet        story={story} onUpdate={update} onClose={closeSheet}/>}
+      {activeSheet==="characters" && <CharacterArcSheet story={story} onUpdate={update} onClose={closeSheet}/>}
 
-      <div style={{ position:"fixed", inset:0, background:C.bg, display:"flex", flexDirection:"column" }}>
+      <div style={{ position:"fixed", inset:0, background:C.bg, display:"flex", flexDirection:"column", overflow:"hidden" }}>
 
         {/* ── Top bar ── */}
         <div style={{ background:C.panel, borderBottom:`1px solid ${C.border}`, padding:"10px 16px", paddingTop:"max(10px,env(safe-area-inset-top,10px))", display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
@@ -1503,6 +1965,10 @@ function DossierDetail({ story, onChange, onBack, onDelete }) {
               <span style={{ fontSize:8, color:C.muted }}>{totalWords}w total</span>
             </div>
           </div>
+          <button onClick={()=>openSheet("characters")}
+            style={{ background:(story.characters||[]).length>0?`${C.amber}15`:"transparent", border:`1px solid ${(story.characters||[]).length>0?C.amber:C.border}`, borderRadius:6, padding:"5px 10px", color:(story.characters||[]).length>0?C.amber:C.grey, fontSize:9, letterSpacing:"0.1em", cursor:"pointer", flexShrink:0 }}>
+            👤 {(story.characters||[]).length>0?(story.characters||[]).length:"CAST"}
+          </button>
           <button onClick={()=>openSheet("info")}
             style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 10px", color:C.grey, fontSize:9, letterSpacing:"0.1em", cursor:"pointer", flexShrink:0 }}>
             INFO
@@ -1510,7 +1976,7 @@ function DossierDetail({ story, onChange, onBack, onDelete }) {
         </div>
 
         {/* ── Scrollable body ── */}
-        <div style={{ flex:1, minHeight:0, overflowY:"scroll", WebkitOverflowScrolling:"touch" }}>
+        <div style={{ flex:1, minHeight:0, overflowY:"auto", WebkitOverflowScrolling:"touch", position:"relative" }}>
 
           {/* ── SECTIONS ── */}
           <div style={{ padding:"16px 16px 8px" }}>
@@ -1627,11 +2093,15 @@ function DossierDetail({ story, onChange, onBack, onDelete }) {
               </div>
             )}
 
-            {/* Evidence + Burn row */}
-            <div style={{ display:"flex", gap:10, marginTop:16 }}>
+            {/* Evidence + Characters + Burn row */}
+            <div style={{ display:"flex", gap:8, marginTop:16, flexWrap:"wrap" }}>
               <button onClick={()=>openSheet("evidence")}
                 style={{ flex:1, background:"rgba(255,255,255,0.03)", border:`1px solid ${C.border}`, borderRadius:10, padding:"12px", color:C.greyLight, fontSize:10, letterSpacing:"0.12em", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
                 📎 EVIDENCE {(story.evidence||[]).length>0?`(${story.evidence.length})`:""}
+              </button>
+              <button onClick={()=>openSheet("characters")}
+                style={{ flex:1, background:"rgba(232,160,32,0.06)", border:`1px solid ${C.amber}44`, borderRadius:10, padding:"12px", color:C.amber, fontSize:10, letterSpacing:"0.12em", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                👤 CHARACTERS {(story.characters||[]).length>0?`(${story.characters.length})`:""}
               </button>
               <button onClick={()=>{ if(window.confirm(`Burn "${story.title}"?`)){onDelete(story.id);onBack();} }}
                 style={{ background:"rgba(204,51,51,0.08)", border:`1px solid ${C.red}44`, borderRadius:10, padding:"12px 16px", color:C.red, fontSize:10, letterSpacing:"0.12em", cursor:"pointer" }}>
