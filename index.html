@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <meta name="apple-mobile-web-app-title" content="E.D. Archive"/>
+  <meta name="apple-mobile-web-app-title" content="Operation Codex"/>
   <meta name="theme-color" content="#07090b"/>
-  <title>The Echelon Directorate</title>
+  <title>Operation Codex</title>
   <style>html, body { margin: 0; padding: 0; background: #07090b; }</style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
@@ -86,7 +86,7 @@ const globalCSS = `
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
 const BOOT_LINES = [
-  "ECHELON DIRECTORATE v7.1.1",
+  "OPERATION CODEX v7.1.1",
   "▸ Mounting archive... [OK]",
   "▸ Access granted.",
   "",
@@ -208,8 +208,7 @@ const DEFAULTS = [
     content:"",
     sections:[
       { id:"s1", title:"KEY THEMES",    content:"Identity, betrayal, the weight of secrets." },
-      { id:"s2", title:"OPENING SCENE", content:"Graveside in Lisbon. Rain. She doesn't cry — that's the tell." },
-      { id:"s3", title:"CHARACTERS",    content:"— Ana Voss: burned CIA analyst, sharp, guarded\n— Vasek: her dead handler, secrets everywhere" },
+      { id:"s3", title:"CHARACTERS",    content:"" },
       { id:"s4", title:"RESEARCH",      content:"Lisbon's Alfama district. Flemish paintings and microdots." },
       { id:"s5", title:"PLOT NOTES",    content:"" },
     ],
@@ -227,11 +226,10 @@ const DEFAULTS = [
     coverImage:null, coverFilter:"sepia",
     content:"",
     sections:[
-      { id:"s1", title:"KEY THEMES",    content:"Identity without purpose. Loyalty to a country that no longer exists." },
-      { id:"s2", title:"OPENING SCENE", content:"The phone rings. Wrong number. That's the signal. 11 years waiting." },
-      { id:"s3", title:"CHARACTERS",    content:"" },
-      { id:"s4", title:"RESEARCH",      content:"Operation RYAN. KGB illegals program. Berlin 1989." },
-      { id:"s5", title:"PLOT NOTES",    content:"" },
+      { id:"s1", title:"KEY THEMES",  content:"Identity without purpose. Loyalty to a country that no longer exists." },
+      { id:"s3", title:"CHARACTERS",  content:"" },
+      { id:"s4", title:"RESEARCH",    content:"Operation RYAN. KGB illegals program. Berlin 1989." },
+      { id:"s5", title:"PLOT NOTES",  content:"" },
     ],
     chapters:[
       { id:1, title:"Prologue — Activation",        done:true,  content:"" },
@@ -351,7 +349,7 @@ function BootSequence({ onComplete }) {
     <div style={{ height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"32px 24px", paddingTop:"max(52px,calc(env(safe-area-inset-top,0px)+32px))", animation:"flicker 8s infinite", textAlign:"center" }}>
       <EDLogo size={60} color={C.silver} glow/>
       <h1 style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:20, fontWeight:700, letterSpacing:"0.45em", color:C.amber, marginTop:14, marginBottom:4, textAlign:"center" }}>
-        THE ECHELON DIRECTORATE
+        OPERATION CODEX
       </h1>
       <p style={{ fontSize:8, color:C.grey, letterSpacing:"0.35em", marginBottom:30, textAlign:"center" }}>
         PRESERVE // CONTROL // ASCEND
@@ -441,7 +439,6 @@ function FilterPickerSheet({ src, onConfirm, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 const DEFAULT_SECTIONS = [
   { id:"s1", title:"KEY THEMES",    content:"" },
-  { id:"s2", title:"OPENING SCENE", content:"" },
   { id:"s3", title:"CHARACTERS",    content:"" },
   { id:"s4", title:"RESEARCH",      content:"" },
   { id:"s5", title:"PLOT NOTES",    content:"" },
@@ -503,12 +500,26 @@ function NewDossierSheet({ onSave, onClose }) {
 function DossierList({ stories, onOpen, onNew, onDelete }) {
   const [search,       setSearch]       = useState("");
   const [filterStatus, setFilterStatus] = useState("ALL");
+  const [quickCapture, setQuickCapture] = useState(false);
+  const [captureText,  setCaptureText]  = useState("");
+  const captureRef = useRef(null);
 
   const filtered = stories.filter(s => {
     const matchText   = (s.title+(s.logline||"")).toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus==="ALL" || s.status===filterStatus;
     return matchText && matchStatus;
   });
+
+  const exportAll = () => {
+    const lines = stories.map(s => {
+      const secText = (s.sections||[]).map(sec=>`\n## ${sec.title}\n${sec.content||"(empty)"}`).join("\n");
+      const chapText = (s.chapters||[]).map(ch=>`\n### ${ch.title}${ch.done?" ✓":""}\n${(ch.blocks||[]).map(b=>b.text).join("\n")||ch.content||"(empty)"}`).join("\n");
+      return `# ${s.title}\n${s.status} · ${s.genre}${s.logline?"\n"+s.logline:""}${secText}${chapText}`;
+    }).join("\n\n---\n\n");
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(lines).then(()=>alert("All dossiers copied to clipboard!"));
+    }
+  };
 
   return (
     <div style={{ position:"fixed", inset:0, display:"flex", flexDirection:"column", background:C.bg }}>
@@ -518,15 +529,31 @@ function DossierList({ stories, onOpen, onNew, onDelete }) {
         <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:12 }}>
           <EDLogo size={28} color={C.silver} glow/>
           <div>
-            <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:16, fontWeight:700, letterSpacing:"0.35em", color:C.amber }}>ECHELON DIRECTORATE</div>
+            <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:16, fontWeight:700, letterSpacing:"0.35em", color:C.amber }}>OPERATION CODEX</div>
             <div style={{ fontSize:8, color:C.grey, letterSpacing:"0.2em", marginTop:1 }}>STORY ARCHIVE</div>
           </div>
           <div style={{ flex:1 }}/>
-          <button onClick={onNew}
-            style={{ background:C.blue, border:"none", borderRadius:10, width:38, height:38, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", fontSize:24, color:C.bg, lineHeight:1, flexShrink:0 }}>
-            +
+          <button onClick={exportAll}
+            style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:8, width:34, height:34, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:C.greyLight, fontSize:14, flexShrink:0 }}>
+            ↑
+          </button>
+          <button onClick={()=>{ setQuickCapture(v=>!v); setTimeout(()=>captureRef.current?.focus(),80); }}
+            style={{ background:quickCapture?C.amber:C.blue, border:"none", borderRadius:10, width:38, height:38, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", fontSize:22, color:C.bg, lineHeight:1, flexShrink:0 }}>
+            {quickCapture?"×":"+"}
           </button>
         </div>
+
+        {/* Quick capture */}
+        {quickCapture && (
+          <div style={{ display:"flex", gap:8, marginBottom:10, animation:"fadeUp 0.15s ease both" }}>
+            <input ref={captureRef} value={captureText} onChange={e=>setCaptureText(e.target.value)}
+              onKeyDown={e=>{ if(e.key==="Enter"&&captureText.trim()){ onNew({ title:captureText.trim(), prefill:true }); setCaptureText(""); setQuickCapture(false); } }}
+              placeholder="Quick idea... press Enter to save"
+              style={{ flex:1, background:"rgba(255,255,255,0.06)", border:`1px solid ${C.amber}`, borderRadius:8, padding:"10px 13px", color:C.white, fontSize:14, outline:"none", fontFamily:"'Special Elite',serif" }}/>
+            <button onClick={()=>{ if(captureText.trim()){ onNew({ title:captureText.trim(), prefill:true }); setCaptureText(""); setQuickCapture(false); } }}
+              style={{ background:C.amber, border:"none", borderRadius:8, padding:"10px 14px", color:C.bg, fontSize:16, fontWeight:700, cursor:"pointer" }}>→</button>
+          </div>
+        )}
         <div style={{ position:"relative", marginBottom:10 }}>
           <span style={{ position:"absolute", left:11, top:"50%", transform:"translateY(-50%)", fontSize:13, color:C.muted, pointerEvents:"none" }}>🔍</span>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search dossiers..."
@@ -611,7 +638,7 @@ function DossierList({ stories, onOpen, onNew, onDelete }) {
 
       {/* Footer */}
       <div style={{ background:C.panel, borderTop:`1px solid ${C.border}`, padding:"5px 16px", paddingBottom:"max(5px,env(safe-area-inset-bottom,5px))", display:"flex", justifyContent:"space-between", fontSize:7, color:C.muted, letterSpacing:"0.1em" }}>
-        <span>E.D. ARCHIVE // FOR THE CONTINUITY. FOR THE ECHELON.</span>
+        <span>OPERATION CODEX // FOR THE CONTINUITY. FOR THE MISSION.</span>
         <span style={{ animation:"blink 3s infinite", color:C.blueDim }}>● SECURE</span>
       </div>
     </div>
@@ -843,16 +870,17 @@ function EvidenceSheet({ story, onUpdate, onClose }) {
 // INFO PANEL (bottom sheet — title, status, genre, logline, cover)
 // ─────────────────────────────────────────────────────────────────────────────
 function InfoSheet({ story, onUpdate, onClose }) {
-  const [title,   setTitle]   = useState(story.title);
-  const [status,  setStatus]  = useState(story.status);
-  const [genre,   setGenre]   = useState(story.genre);
-  const [logline, setLogline] = useState(story.logline||"");
+  const [title,     setTitle]     = useState(story.title);
+  const [status,    setStatus]    = useState(story.status);
+  const [genre,     setGenre]     = useState(story.genre);
+  const [logline,   setLogline]   = useState(story.logline||"");
+  const [wordGoal,  setWordGoal]  = useState(story.wordGoal||"");
   const [uploading, setUploading] = useState(false);
   const [filterPicker, setFilterPicker] = useState(null);
   const fileInputRef = useRef(null);
 
   const handleSave = () => {
-    onUpdate({ title:title.trim()||story.title, status, genre, logline });
+    onUpdate({ title:title.trim()||story.title, status, genre, logline, wordGoal:parseInt(wordGoal)||0 });
     onClose();
   };
 
@@ -907,6 +935,11 @@ function InfoSheet({ story, onUpdate, onClose }) {
           <div>
             <FieldLabel>LOGLINE</FieldLabel>
             <input value={logline} onChange={e=>setLogline(e.target.value)} placeholder="One line summary..."
+              style={{ width:"100%", background:"rgba(255,255,255,0.04)", border:`1px solid ${C.border}`, borderRadius:8, padding:"11px 14px", color:C.greyLight, fontSize:12, outline:"none" }}/>
+          </div>
+          <div>
+            <FieldLabel>WORD COUNT GOAL</FieldLabel>
+            <input value={wordGoal} onChange={e=>setWordGoal(e.target.value)} placeholder="e.g. 10000" type="number"
               style={{ width:"100%", background:"rgba(255,255,255,0.04)", border:`1px solid ${C.border}`, borderRadius:8, padding:"11px 14px", color:C.greyLight, fontSize:12, outline:"none" }}/>
           </div>
           <button onClick={handleSave}
@@ -1566,8 +1599,8 @@ const STORY_ARCS = [
   },
 ];
 
-function CharacterArcSheet({ story, onUpdate, onClose }) {
-  const [tab,           setTab]           = useState("characters");
+function CharacterArcSheet({ story, onUpdate, onClose, initialTab="characters" }) {
+  const [tab,           setTab]           = useState(initialTab);
   const [characters,    setCharacters]    = useState(story.characters||[]);
   const [storyArcId,    setStoryArcId]    = useState(story.storyArcId||null);
   const [storyArcNotes, setStoryArcNotes] = useState(story.storyArcNotes||{});
@@ -1876,6 +1909,7 @@ function CharacterArcSheet({ story, onUpdate, onClose }) {
 
 function DossierDetail({ story, onChange, onBack, onDelete }) {
   const [activeSheet,   setActiveSheet]   = useState(null);
+  const [arcTab,        setArcTab]        = useState("characters");
   const [activeSection, setActiveSection] = useState(null);
   const [activeChapter, setActiveChapter] = useState(null);
   const [addingSection, setAddingSection] = useState(false);
@@ -1945,7 +1979,7 @@ function DossierDetail({ story, onChange, onBack, onDelete }) {
       {activeSheet==="chapters"   && <ChaptersSheet    story={story} onUpdate={update} onClose={closeSheet}/>}
       {activeSheet==="evidence"   && <EvidenceSheet    story={story} onUpdate={update} onClose={closeSheet}/>}
       {activeSheet==="info"       && <InfoSheet        story={story} onUpdate={update} onClose={closeSheet}/>}
-      {activeSheet==="characters" && <CharacterArcSheet story={story} onUpdate={update} onClose={closeSheet}/>}
+      {activeSheet==="characters" && <CharacterArcSheet story={story} onUpdate={update} onClose={closeSheet} initialTab={arcTab}/>}
 
       <div style={{ position:"fixed", inset:0, background:C.bg, display:"flex", flexDirection:"column", overflow:"hidden" }}>
 
@@ -1965,15 +1999,27 @@ function DossierDetail({ story, onChange, onBack, onDelete }) {
               <span style={{ fontSize:8, color:C.muted }}>{totalWords}w total</span>
             </div>
           </div>
-          <button onClick={()=>openSheet("characters")}
-            style={{ background:(story.characters||[]).length>0?`${C.amber}15`:"transparent", border:`1px solid ${(story.characters||[]).length>0?C.amber:C.border}`, borderRadius:6, padding:"5px 10px", color:(story.characters||[]).length>0?C.amber:C.grey, fontSize:9, letterSpacing:"0.1em", cursor:"pointer", flexShrink:0 }}>
-            👤 {(story.characters||[]).length>0?(story.characters||[]).length:"CAST"}
-          </button>
           <button onClick={()=>openSheet("info")}
             style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:6, padding:"5px 10px", color:C.grey, fontSize:9, letterSpacing:"0.1em", cursor:"pointer", flexShrink:0 }}>
             INFO
           </button>
         </div>
+
+        {/* Word count goal progress bar */}
+        {story.wordGoal>0 && (()=>{
+          const pct = Math.min(100, Math.round((totalWords/story.wordGoal)*100));
+          return (
+            <div style={{ padding:"6px 16px 8px", background:C.panel, borderBottom:`1px solid ${C.border}` }}>
+              <div style={{ display:"flex", justifyContent:"space-between", fontSize:8, color:C.muted, letterSpacing:"0.1em", marginBottom:4 }}>
+                <span>WORD GOAL</span>
+                <span>{totalWords.toLocaleString()} / {story.wordGoal.toLocaleString()} — {pct}%</span>
+              </div>
+              <div style={{ height:3, background:C.blueFaint, borderRadius:2, overflow:"hidden" }}>
+                <div style={{ height:"100%", width:`${pct}%`, background:pct>=100?`linear-gradient(90deg,${C.green},#70dd80)`:`linear-gradient(90deg,${C.blueDim},${C.blue})`, transition:"width 0.4s" }}/>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── Scrollable body ── */}
         <div style={{ flex:1, minHeight:0, overflowY:"auto", WebkitOverflowScrolling:"touch", position:"relative" }}>
@@ -2001,6 +2047,31 @@ function DossierDetail({ story, onChange, onBack, onDelete }) {
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
               {sections.map(sec => {
                 const wc = (sec.content||"").split(/\s+/).filter(Boolean).length;
+                // CHARACTERS section opens the arc sheet instead of section writer
+                if (sec.title==="CHARACTERS") {
+                  return (
+                    <div key={sec.id} onClick={()=>{ setArcTab("characters"); openSheet("characters"); }}
+                      style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${C.amber}44`, borderRadius:12, padding:"14px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12, transition:"all 0.12s" }}>
+                      <div style={{ width:3, alignSelf:"stretch", background:C.amber, borderRadius:2, flexShrink:0, opacity:0.7 }}/>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:13, fontWeight:700, color:C.amber, letterSpacing:"0.2em" }}>CHARACTERS</div>
+                        {(story.characters||[]).length>0 ? (
+                          <>
+                            {(story.characters||[]).slice(0,3).map(ch=>(
+                              <div key={ch.id} style={{ fontSize:12, color:C.greyLight, marginTop:4, fontFamily:"'Special Elite',serif" }}>— {ch.name}</div>
+                            ))}
+                            {(story.characters||[]).length>3 && (
+                              <div style={{ fontSize:10, color:C.muted, marginTop:3, fontStyle:"italic" }}>+{(story.characters||[]).length-3} more</div>
+                            )}
+                          </>
+                        ) : (
+                          <div style={{ fontSize:11, color:C.muted, marginTop:4, fontStyle:"italic" }}>Tap to add characters...</div>
+                        )}
+                      </div>
+                      <span style={{ color:C.blue, fontSize:18 }}>›</span>
+                    </div>
+                  );
+                }
                 return (
                   <div key={sec.id} onClick={()=>setActiveSection(sec)}
                     style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${sec.content?C.borderBright:C.border}`, borderRadius:12, padding:"14px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12, transition:"all 0.12s" }}>
@@ -2029,6 +2100,23 @@ function DossierDetail({ story, onChange, onBack, onDelete }) {
                   </div>
                 );
               })}
+            </div>
+
+            {/* ── STORY ARC shortcut card ── */}
+            <div onClick={()=>{ setArcTab("story_arc"); openSheet("characters"); }}
+              style={{ margin:"8px 0 0", background:"rgba(79,195,247,0.04)", border:`1px solid ${story.storyArcId?C.blueDim:C.border}`, borderRadius:12, padding:"14px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12, transition:"all 0.12s" }}>
+              <div style={{ width:3, alignSelf:"stretch", background:story.storyArcId?C.blue:C.muted, borderRadius:2, flexShrink:0, opacity:0.7 }}/>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:13, fontWeight:700, color:story.storyArcId?C.blue:C.greyLight, letterSpacing:"0.2em" }}>STORY ARC</div>
+                {story.storyArcId ? (
+                  <div style={{ fontSize:12, color:C.greyLight, marginTop:4, fontFamily:"'Special Elite',serif" }}>
+                    {STORY_ARCS.find(a=>a.id===story.storyArcId)?.label||"Arc selected"}
+                  </div>
+                ) : (
+                  <div style={{ fontSize:11, color:C.muted, marginTop:4, fontStyle:"italic" }}>Tap to choose your story structure...</div>
+                )}
+              </div>
+              <span style={{ color:story.storyArcId?C.blue:C.muted, fontSize:18 }}>›</span>
             </div>
           </div>
 
@@ -2093,15 +2181,11 @@ function DossierDetail({ story, onChange, onBack, onDelete }) {
               </div>
             )}
 
-            {/* Evidence + Characters + Burn row */}
-            <div style={{ display:"flex", gap:8, marginTop:16, flexWrap:"wrap" }}>
+            {/* Evidence + Burn row */}
+            <div style={{ display:"flex", gap:8, marginTop:16 }}>
               <button onClick={()=>openSheet("evidence")}
                 style={{ flex:1, background:"rgba(255,255,255,0.03)", border:`1px solid ${C.border}`, borderRadius:10, padding:"12px", color:C.greyLight, fontSize:10, letterSpacing:"0.12em", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
                 📎 EVIDENCE {(story.evidence||[]).length>0?`(${story.evidence.length})`:""}
-              </button>
-              <button onClick={()=>openSheet("characters")}
-                style={{ flex:1, background:"rgba(232,160,32,0.06)", border:`1px solid ${C.amber}44`, borderRadius:10, padding:"12px", color:C.amber, fontSize:10, letterSpacing:"0.12em", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-                👤 CHARACTERS {(story.characters||[]).length>0?`(${story.characters.length})`:""}
               </button>
               <button onClick={()=>{ if(window.confirm(`Burn "${story.title}"?`)){onDelete(story.id);onBack();} }}
                 style={{ background:"rgba(204,51,51,0.08)", border:`1px solid ${C.red}44`, borderRadius:10, padding:"12px 16px", color:C.red, fontSize:10, letterSpacing:"0.12em", cursor:"pointer" }}>
@@ -2138,10 +2222,23 @@ function MainApp() {
     const newStory = { id, ...d };
     setStories(ss => {
       const updated = [newStory, ...ss];
-      saveToStorage(SK.stories, updated); // save immediately
+      saveToStorage(SK.stories, updated);
       return updated;
     });
-    setActiveId(id);
+    if (!d.prefill) setActiveId(id);
+  };
+
+  const handleNew = (opts={}) => {
+    if (opts.prefill && opts.title) {
+      addStory({
+        title:opts.title, genre:"THRILLER", status:"ACTIVE OP", logline:"",
+        coverImage:null, coverFilter:"classified", content:"",
+        sections:DEFAULT_SECTIONS.map(s=>({...s})),
+        chapters:[], evidence:[], updatedAt:new Date().toISOString(),
+      });
+    } else {
+      setShowNew(true);
+    }
   };
   const updateStory = upd => setStories(ss=>ss.map(s=>s.id===upd.id?upd:s));
   const deleteStory = id  => { setStories(ss=>ss.filter(s=>s.id!==id)); setActiveId(null); };
@@ -2152,7 +2249,7 @@ function MainApp() {
       {showNew && <NewDossierSheet onSave={d=>{addStory(d);setShowNew(false);}} onClose={()=>setShowNew(false)}/>}
       {activeStory
         ? <DossierDetail story={activeStory} onChange={updateStory} onBack={()=>setActiveId(null)} onDelete={deleteStory}/>
-        : <DossierList   stories={stories}   onOpen={id=>setActiveId(id)} onNew={()=>setShowNew(true)} onDelete={deleteStory}/>
+        : <DossierList   stories={stories}   onOpen={id=>setActiveId(id)} onNew={handleNew} onDelete={deleteStory}/>
       }
     </>
   );
