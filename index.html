@@ -78,18 +78,21 @@ const globalCSS = `
   }
   /* On wider screens — show letterbox background */
   @media (min-width: 480px) {
-    body {
-      background: #030506;
-    }
-    #root {
-      border-left: 1px solid ${C.border};
-      border-right: 1px solid ${C.border};
-    }
+    body { background: #030506; }
+    #root { border-left: 1px solid ${C.border}; border-right: 1px solid ${C.border}; }
   }
-  /* On large screens — scale everything up slightly */
-  @media (min-width: 768px) {
-    #root { max-width: 520px; }
+  /* Tablet — a bit wider */
+  @media (min-width: 640px) {
+    #root { max-width: 560px; }
+  }
+  /* Desktop — comfortable reading width */
+  @media (min-width: 1024px) {
+    #root { max-width: 680px; }
     body { font-size: 17px; }
+  }
+  /* Large desktop — give it more room */
+  @media (min-width: 1440px) {
+    #root { max-width: 780px; }
   }
   input, textarea, button, select { font-family: 'Share Tech Mono', monospace; }
   /* Prevent iOS Safari zoom on input tap — font-size must be >= 16px */
@@ -123,17 +126,26 @@ async function syncToCloud(stories) {
   try {
     const deviceId = getDeviceId();
     const payload  = { id: deviceId, user_id: deviceId, data: { stories }, updated_at: new Date().toISOString() };
-    await fetch(`${SUPABASE_URL}/rest/v1/stories`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/stories`, {
       method: "POST",
       headers: {
         "Content-Type":  "application/json",
         "apikey":        SUPABASE_KEY,
         "Authorization": `Bearer ${SUPABASE_KEY}`,
-        "Prefer":        "resolution=merge-duplicates",
+        "Prefer":        "resolution=merge-duplicates,return=minimal",
       },
       body: JSON.stringify(payload),
     });
-  } catch(e) { console.warn("Cloud sync failed:", e); }
+    if (!res.ok) {
+      const err = await res.text();
+      console.warn("Cloud sync error:", res.status, err);
+      return false;
+    }
+    return true;
+  } catch(e) {
+    console.warn("Cloud sync failed:", e);
+    return false;
+  }
 }
 
 async function loadFromCloud() {
@@ -145,6 +157,7 @@ async function loadFromCloud() {
         "Authorization": `Bearer ${SUPABASE_KEY}`,
       },
     });
+    if (!res.ok) { console.warn("Cloud load error:", res.status); return null; }
     const rows = await res.json();
     if (rows && rows.length > 0 && rows[0].data?.stories) return rows[0].data.stories;
   } catch(e) { console.warn("Cloud load failed:", e); }
@@ -562,7 +575,7 @@ function NewDossierSheet({ onSave, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // DOSSIER LIST
 // ─────────────────────────────────────────────────────────────────────────────
-function DossierList({ stories, onOpen, onNew, onDelete, syncState }) {
+function DossierList({ stories, onOpen, onNew, onDelete, syncState, onSync }) {
   const [search,       setSearch]       = useState("");
   const [filterStatus, setFilterStatus] = useState("ALL");
   const [quickCapture, setQuickCapture] = useState(false);
@@ -598,11 +611,11 @@ function DossierList({ stories, onOpen, onNew, onDelete, syncState }) {
             <div style={{ fontSize:8, color:C.grey, letterSpacing:"0.2em", marginTop:1 }}>STORY ARCHIVE</div>
           </div>
           <div style={{ flex:1 }}/>
-          {/* Sync status dot */}
-          <div style={{ display:"flex", alignItems:"center", gap:4, marginRight:6 }}>
-            <div style={{ width:6, height:6, borderRadius:"50%", background: syncState==="synced"?C.green:syncState==="syncing"?C.amber:syncState==="error"?C.red:C.muted, transition:"background 0.4s" }}/>
+          {/* Sync status dot — tap to force sync */}
+          <div onClick={onSync} style={{ display:"flex", alignItems:"center", gap:4, marginRight:6, cursor:"pointer", padding:"4px 6px" }}>
+            <div style={{ width:7, height:7, borderRadius:"50%", background: syncState==="synced"?C.green:syncState==="syncing"?C.amber:syncState==="error"?C.red:C.muted, transition:"background 0.4s", boxShadow: syncState==="synced"?`0 0 6px ${C.green}`:syncState==="syncing"?`0 0 6px ${C.amber}`:"none" }}/>
             <span style={{ fontSize:7, color:C.muted, letterSpacing:"0.1em", fontFamily:"'Rajdhani',sans-serif" }}>
-              {syncState==="synced"?"SYNCED":syncState==="syncing"?"SYNCING":syncState==="error"?"OFFLINE":"LOCAL"}
+              {syncState==="synced"?"SYNCED":syncState==="syncing"?"SYNCING...":syncState==="error"?"OFFLINE — TAP":"LOCAL — TAP"}
             </span>
           </div>
           <button onClick={exportAll}
@@ -2339,7 +2352,12 @@ function MainApp() {
     if (!d.prefill) setActiveId(id);
   };
 
-  const handleNew = (opts={}) => {
+  const manualSync = () => {
+    setSyncState("syncing");
+    syncToCloud(stories)
+      .then(ok => setSyncState(ok ? "synced" : "error"))
+      .catch(() => setSyncState("error"));
+  };
     if (opts.prefill && opts.title) {
       addStory({
         title:opts.title, genre:"THRILLER", status:"ACTIVE OP", logline:"",
@@ -2355,14 +2373,14 @@ function MainApp() {
     const next = ss.map(s=>s.id===upd.id?upd:s);
     saveToStorage(SK.stories, next);
     setSyncState("syncing");
-    syncToCloud(next).then(()=>setSyncState("synced")).catch(()=>setSyncState("error"));
+    syncToCloud(next).then(ok=>setSyncState(ok?"synced":"error")).catch(()=>setSyncState("error"));
     return next;
   });
   const deleteStory = id => {
     setStories(ss => {
       const next = ss.filter(s=>s.id!==id);
       saveToStorage(SK.stories, next);
-      syncToCloud(next).then(()=>setSyncState("synced")).catch(()=>setSyncState("error"));
+      syncToCloud(next).then(ok=>setSyncState(ok?"synced":"error")).catch(()=>setSyncState("error"));
       return next;
     });
     setActiveId(null);
@@ -2374,7 +2392,7 @@ function MainApp() {
       {showNew && <NewDossierSheet onSave={d=>{addStory(d);setShowNew(false);}} onClose={()=>setShowNew(false)}/>}
       {activeStory
         ? <DossierDetail story={activeStory} onChange={updateStory} onBack={()=>setActiveId(null)} onDelete={deleteStory}/>
-        : <DossierList   stories={stories}   onOpen={id=>setActiveId(id)} onNew={handleNew} onDelete={deleteStory} syncState={syncState}/>
+        : <DossierList stories={stories} onOpen={id=>setActiveId(id)} onNew={handleNew} onDelete={deleteStory} syncState={syncState} onSync={manualSync}/>
       }
     </>
   );
