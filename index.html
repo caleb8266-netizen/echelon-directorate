@@ -77,23 +77,18 @@ const globalCSS = `
     background: ${C.bg};
     box-shadow: 0 0 80px rgba(0,0,0,0.8);
   }
-  /* On wider screens — show letterbox background */
+  /* Tablet — wider */
   @media (min-width: 480px) {
     body { background: #030506; }
     #root { border-left: 1px solid ${C.border}; border-right: 1px solid ${C.border}; }
   }
-  /* Tablet — a bit wider */
   @media (min-width: 640px) {
-    #root { max-width: 560px; }
+    #root { max-width: 600px; }
   }
-  /* Desktop — comfortable reading width */
+  /* Desktop — full width up to a generous max */
   @media (min-width: 1024px) {
-    #root { max-width: 680px; }
-    body { font-size: 17px; }
-  }
-  /* Large desktop — give it more room */
-  @media (min-width: 1440px) {
-    #root { max-width: 780px; }
+    #root { max-width: 100%; border-left: none; border-right: none; }
+    body { background: ${C.bg}; font-size: 17px; }
   }
   input, textarea, button, select { font-family: 'Share Tech Mono', monospace; }
   /* Prevent iOS Safari zoom on input tap — font-size must be >= 16px */
