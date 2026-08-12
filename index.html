@@ -2307,30 +2307,38 @@ function MainApp() {
     nextId.current = Math.max(maxId + 1, Date.now());
   }
 
-  // On mount — try to load from cloud and merge with local
+  // On mount — load from cloud first, fall back to local
   useEffect(() => {
     setSyncState("syncing");
     loadFromCloud().then(cloudStories => {
       if (cloudStories && cloudStories.length > 0) {
-        // Merge: cloud wins for newer stories, local wins for newer local
-        setStories(local => {
-          const merged = [...cloudStories];
-          local.forEach(ls => {
-            const cloudMatch = merged.find(cs => cs.id === ls.id);
-            if (!cloudMatch) merged.push(ls);
-            else if (new Date(ls.updatedAt) > new Date(cloudMatch.updatedAt)) {
-              const idx = merged.findIndex(cs => cs.id === ls.id);
-              merged[idx] = ls;
-            }
-          });
-          saveToStorage(SK.stories, merged);
-          return merged;
+        // Always use cloud data, then merge any newer local stories on top
+        const local = loadFromStorage(SK.stories, []);
+        const merged = [...cloudStories];
+        local.forEach(ls => {
+          const cloudMatch = merged.find(cs => cs.id === ls.id);
+          if (!cloudMatch) {
+            // Local only — add it
+            merged.push(ls);
+          } else if (ls.updatedAt && cloudMatch.updatedAt && new Date(ls.updatedAt) > new Date(cloudMatch.updatedAt)) {
+            // Local is newer — use local
+            const idx = merged.findIndex(cs => cs.id === ls.id);
+            merged[idx] = ls;
+          }
         });
+        saveToStorage(SK.stories, merged);
+        setStories(merged);
         setSyncState("synced");
       } else {
-        setSyncState("idle");
+        // No cloud data — use local, then push to cloud
+        const local = loadFromStorage(SK.stories, DEFAULTS);
+        setStories(local);
+        syncToCloud(local).then(ok=>setSyncState(ok?"synced":"error")).catch(()=>setSyncState("error"));
       }
-    }).catch(()=>setSyncState("error"));
+    }).catch(()=>{
+      // Cloud failed — use local silently
+      setSyncState("error");
+    });
   }, []);
 
   useEffect(()=>{ saveToStorage(SK.stories, stories); }, [stories]);
