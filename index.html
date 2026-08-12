@@ -146,8 +146,8 @@ async function syncToCloud(stories) {
 
 async function loadFromCloud() {
   try {
-    const deviceId = getDeviceId();
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/stories?id=eq.${deviceId}&select=data,updated_at`, {
+    // Load ALL rows — merge stories from every device
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/stories?select=data,updated_at&order=updated_at.desc`, {
       headers: {
         "apikey":        SUPABASE_KEY,
         "Authorization": `Bearer ${SUPABASE_KEY}`,
@@ -155,7 +155,24 @@ async function loadFromCloud() {
     });
     if (!res.ok) { console.warn("Cloud load error:", res.status); return null; }
     const rows = await res.json();
-    if (rows && rows.length > 0 && rows[0].data && rows[0].data.stories) return rows[0].data.stories;
+    if (!rows || rows.length === 0) return null;
+
+    // Merge all stories from all devices — newest version of each story wins
+    const storyMap = {};
+    rows.forEach(row => {
+      const stories = row.data && row.data.stories ? row.data.stories : [];
+      stories.forEach(s => {
+        const existing = storyMap[s.id];
+        if (!existing) {
+          storyMap[s.id] = s;
+        } else if (s.updatedAt && existing.updatedAt && new Date(s.updatedAt) > new Date(existing.updatedAt)) {
+          storyMap[s.id] = s;
+        }
+      });
+    });
+
+    const merged = Object.values(storyMap);
+    return merged.length > 0 ? merged : null;
   } catch(e) { console.warn("Cloud load failed:", e); }
   return null;
 }
