@@ -160,7 +160,7 @@ async function loadFromCloud() {
     });
     if (!res.ok) { console.warn("Cloud load error:", res.status); return null; }
     const rows = await res.json();
-    if (rows && rows.length > 0 && rows[0].data?.stories) return rows[0].data.stories;
+    if (rows && rows.length > 0 && rows[0].data && rows[0].data.stories) return rows[0].data.stories;
   } catch(e) { console.warn("Cloud load failed:", e); }
   return null;
 }
@@ -374,7 +374,7 @@ function PhotoStamp({ filter }) {
 }
 
 function CIAImage({ src, filter="classified", height=140, showStamp=true, style:sx={} }) {
-  const css = PHOTO_FILTERS.find(f=>f.id===filter)?.css || PHOTO_FILTERS[0].css;
+  const css = (PHOTO_FILTERS.find(f=>f.id===filter) || PHOTO_FILTERS[0]).css;
   return (
     <div style={{ position:"relative", overflow:"hidden", ...sx }}>
       <img src={src} alt="" style={{ width:"100%", height, objectFit:"cover", filter:css, display:"block" }}/>
@@ -623,7 +623,7 @@ function DossierList({ stories, onOpen, onNew, onDelete, syncState, onSync }) {
             style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:8, width:34, height:34, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:C.greyLight, fontSize:14, flexShrink:0 }}>
             ↑
           </button>
-          <button onClick={()=>{ setQuickCapture(v=>!v); setTimeout(()=>captureRef.current?.focus(),80); }}
+          <button onClick={()=>{ setQuickCapture(v=>!v); setTimeout(()=>captureRef.current && captureRef.current.focus(),80); }}
             style={{ background:quickCapture?C.amber:C.blue, border:"none", borderRadius:10, width:38, height:38, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", fontSize:22, color:C.bg, lineHeight:1, flexShrink:0 }}>
             {quickCapture?"×":"+"}
           </button>
@@ -675,10 +675,10 @@ function DossierList({ stories, onOpen, onNew, onDelete, syncState, onSync }) {
         )}
         {filtered.map((s,idx) => {
           const statusColor = STATUS_COLORS[s.status]||C.grey;
-          const chapDone    = s.chapters?.filter(c=>c.done).length||0;
-          const chapTotal   = s.chapters?.length||0;
+          const chapDone    = s.chapters && s.chapters.filter(c=>c.done).length||0;
+          const chapTotal   = s.chapters && s.chapters.length||0;
           const wordCount   = (s.content||"").split(/\s+/).filter(Boolean).length;
-          const filterCSS   = PHOTO_FILTERS.find(f=>f.id===s.coverFilter)?.css||PHOTO_FILTERS[0].css;
+          const filterCSS   = (PHOTO_FILTERS.find(f=>f.id===s.coverFilter) || PHOTO_FILTERS[0]).css;
           return (
             <div key={s.id} onClick={()=>onOpen(s.id)}
               style={{ borderBottom:`1px solid ${C.border}`, cursor:"pointer", animation:`fadeUp 0.2s ease ${idx*0.04}s both`, overflow:"hidden" }}>
@@ -740,8 +740,8 @@ function ChaptersSheet({ story, onUpdate, onClose }) {
   const [activeChapter, setActiveChapter] = useState(null);
   const chapCounter = useRef(Date.now());
 
-  const chapDone  = story.chapters?.filter(c=>c.done).length||0;
-  const chapTotal = story.chapters?.length||0;
+  const chapDone  = story.chapters && story.chapters.filter(c=>c.done).length||0;
+  const chapTotal = story.chapters && story.chapters.length||0;
 
   const addChapter = () => {
     if (!newTitle.trim()) return;
@@ -917,12 +917,12 @@ function EvidenceSheet({ story, onUpdate, onClose }) {
 
       <BottomSheet title="EVIDENCE PHOTOS" onClose={onClose}>
         <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-          <button onClick={()=>fileInputRef.current?.click()}
+          <button onClick={()=>fileInputRef.current && fileInputRef.current.click()}
             style={{ width:"100%", background:"transparent", border:`1px solid ${C.border}`, borderRadius:8, padding:"11px 14px", color:C.grey, fontSize:10, letterSpacing:"0.15em", cursor:"pointer" }}>
             + ATTACH NEW PHOTO
           </button>
           {(story.evidence||[]).length===0 ? (
-            <div onClick={()=>fileInputRef.current?.click()}
+            <div onClick={()=>fileInputRef.current && fileInputRef.current.click()}
               style={{ border:`1.5px dashed ${C.border}`, borderRadius:12, padding:"28px 20px", textAlign:"center", cursor:"pointer" }}>
               <div style={{ fontSize:32, marginBottom:10 }}>📎</div>
               <p style={{ fontSize:12, color:C.muted, letterSpacing:"0.1em", margin:0 }}>TAP TO ATTACH EVIDENCE</p>
@@ -931,7 +931,7 @@ function EvidenceSheet({ story, onUpdate, onClose }) {
           ) : (
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
               {(story.evidence||[]).map(ev => {
-                const filterCSS = PHOTO_FILTERS.find(f=>f.id===ev.filter)?.css||PHOTO_FILTERS[0].css;
+                const filterCSS = (PHOTO_FILTERS.find(f=>f.id===ev.filter) || PHOTO_FILTERS[0]).css;
                 const { color:sc, label:sl } = STAMP[ev.filter]||STAMP.classified;
                 return (
                   <div key={ev.id} onClick={()=>setLightbox(ev)} style={{ cursor:"pointer" }}>
@@ -997,7 +997,7 @@ function InfoSheet({ story, onUpdate, onClose }) {
           {story.coverImage && (
             <CIAImage src={story.coverImage} filter={story.coverFilter} height={130} showStamp style={{ borderRadius:8 }}/>
           )}
-          <button onClick={()=>fileInputRef.current?.click()}
+          <button onClick={()=>fileInputRef.current && fileInputRef.current.click()}
             style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:8, padding:"9px 14px", color:C.grey, fontSize:10, letterSpacing:"0.15em", cursor:"pointer" }}>
             {story.coverImage ? "⟳ CHANGE COVER PHOTO" : "+ ADD COVER PHOTO"}
           </button>
@@ -1170,7 +1170,7 @@ function ScreenplayWriter({ chapter, onSave }) {
 
   const updateBlock = (idx, text) => {
     setBlocks(bs=>bs.map((b,i)=>i===idx?{...b,text}:b));
-    const type = blocks[idx]?.type;
+    const type = blocks[idx] && blocks[idx].type;
     if (type==="character") {
       // Show matching character names as you type
       const upper = text.toUpperCase();
@@ -1186,13 +1186,13 @@ function ScreenplayWriter({ chapter, onSave }) {
   const applySuggestion = (sug, idx) => {
     setBlocks(bs=>bs.map((b,i)=>i===idx?{...b,text:sug.insert}:b));
     setSuggestions([]);
-    setTimeout(()=>textRefs.current[idx]?.focus(),30);
+    setTimeout(()=>textRefs.current[idx] && textRefs.current[idx].focus(),30);
   };
 
   const setType = (type) => {
     setBlocks(bs=>bs.map((b,i)=>i===activeBlock?{...b,type}:b));
-    setSuggestions(buildSuggestions(type, blocks[activeBlock]?.text||""));
-    setTimeout(()=>textRefs.current[activeBlock]?.focus(),50);
+    setSuggestions(buildSuggestions(type, blocks[activeBlock] && blocks[activeBlock].text||""));
+    setTimeout(()=>textRefs.current[activeBlock] && textRefs.current[activeBlock].focus(),50);
   };
 
   // Export blocks as WriterDuet-compatible plain text
@@ -1242,7 +1242,7 @@ function ScreenplayWriter({ chapter, onSave }) {
         setBlocks(bs=>[...bs.slice(0,insertAt), newBlock, ...bs.slice(insertAt)]);
         setActiveBlock(insertAt);
         setSuggestions(knownCharacters.map(c=>({ label:c, insert:c })));
-        setTimeout(()=>textRefs.current[insertAt]?.focus(),30);
+        setTimeout(()=>textRefs.current[insertAt] && textRefs.current[insertAt].focus(),30);
       } else if (cur.type==="character") {
         // Tab on existing character — show known characters
         setSuggestions(knownCharacters.filter(c=>c!==cur.text.toUpperCase()).map(c=>({ label:c, insert:c })));
@@ -1268,7 +1268,7 @@ function ScreenplayWriter({ chapter, onSave }) {
       const newBlock = { id:blockIdRef.current++, type:nextType, text:"" };
       setBlocks(bs=>[...bs.slice(0,idx+1), newBlock, ...bs.slice(idx+1)]);
       setActiveBlock(idx+1);
-      setTimeout(()=>textRefs.current[idx+1]?.focus(),30);
+      setTimeout(()=>{ const el=textRefs.current[idx+1]; if(el) el.focus(); },30);
     }
     if (e.key==="Backspace" && blocks[idx].text==="" && blocks.length>1) {
       e.preventDefault();
@@ -1276,7 +1276,7 @@ function ScreenplayWriter({ chapter, onSave }) {
       setBlocks(bs=>bs.filter((_,i)=>i!==idx));
       const prev = Math.max(0,idx-1);
       setActiveBlock(prev);
-      setTimeout(()=>textRefs.current[prev]?.focus(),30);
+      setTimeout(()=>textRefs.current[prev] && textRefs.current[prev].focus(),30);
     }
   };
 
@@ -1286,10 +1286,10 @@ function ScreenplayWriter({ chapter, onSave }) {
     setBlocks(bs=>[...bs.slice(0,insertAt), newBlock, ...bs.slice(insertAt)]);
     setActiveBlock(insertAt);
     setSuggestions(buildSuggestions(type,""));
-    setTimeout(()=>textRefs.current[insertAt]?.focus(),50);
+    setTimeout(()=>textRefs.current[insertAt] && textRefs.current[insertAt].focus(),50);
   };
 
-  const activeType = SP_TYPES.find(t=>t.id===blocks[activeBlock]?.type)||SP_TYPES[0];
+  const activeType = SP_TYPES.find(t=>t.id===blocks[activeBlock] && blocks[activeBlock].type)||SP_TYPES[0];
 
   return (
     <div style={{ position:"absolute", inset:0, background:"#09100a", zIndex:300, display:"flex", flexDirection:"column", animation:"fadeIn 0.18s ease both" }}>
@@ -1720,7 +1720,7 @@ function CharacterArcSheet({ story, onUpdate, onClose, initialTab="characters" }
   const deleteCharacter = (id) => {
     const next = characters.filter(c=>c.id!==id);
     saveCharacters(next);
-    if (activeChar?.id===id) setActiveChar(null);
+    if (activeChar && activeChar.id===id) setActiveChar(null);
   };
 
   const updateField = (fieldId, value) => {
@@ -1736,7 +1736,7 @@ function CharacterArcSheet({ story, onUpdate, onClose, initialTab="characters" }
   // ── Beat note editor ──
   if (activeBeat) {
     const arc  = STORY_ARCS.find(a=>a.id===activeBeat.arcId);
-    const beat = arc?.beats[activeBeat.beatIndex];
+    const beat = arc && arc.beats[activeBeat.beatIndex];
     const key  = `${activeBeat.arcId}_${activeBeat.beatIndex}`;
     return (
       <div style={{ position:"absolute", inset:0, background:C.bg, zIndex:400, display:"flex", flexDirection:"column", animation:"fadeIn 0.18s ease both" }}>
@@ -1745,18 +1745,18 @@ function CharacterArcSheet({ story, onUpdate, onClose, initialTab="characters" }
             ‹ BACK
           </button>
           <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:14, fontWeight:700, color:arc?.color||C.amber, letterSpacing:"0.15em" }}>{beat?.beat}</div>
-            <div style={{ fontSize:8, color:C.muted, letterSpacing:"0.1em", marginTop:1 }}>p. {beat?.page} · {arc?.label}</div>
+            <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:14, fontWeight:700, color:arc && arc.color||C.amber, letterSpacing:"0.15em" }}>{beat && beat.beat}</div>
+            <div style={{ fontSize:8, color:C.muted, letterSpacing:"0.1em", marginTop:1 }}>p. {beat && beat.page} · {arc && arc.label}</div>
           </div>
         </div>
         <div style={{ padding:"14px 18px 10px", background:"rgba(255,255,255,0.02)", borderBottom:`1px solid ${C.border}`, flexShrink:0 }}>
-          <p style={{ fontSize:12, color:C.greyLight, fontStyle:"italic", lineHeight:1.6 }}>{beat?.hint}</p>
+          <p style={{ fontSize:12, color:C.greyLight, fontStyle:"italic", lineHeight:1.6 }}>{beat && beat.hint}</p>
         </div>
         <textarea
           value={storyArcNotes[key]||""}
           onChange={e=>saveBeatNote(activeBeat.arcId, activeBeat.beatIndex, e.target.value)}
           autoFocus
-          placeholder={`Write your notes for "${beat?.beat}" here...`}
+          placeholder={`Write your notes for "${beat && beat.beat}" here...`}
           style={{ flex:1, minHeight:0, width:"100%", background:"transparent", border:"none", resize:"none", color:C.white, fontFamily:"'Special Elite',serif", fontSize:16, lineHeight:1.9, padding:"22px 22px", outline:"none", overflowY:"scroll", WebkitOverflowScrolling:"touch", paddingBottom:"max(30px,env(safe-area-inset-bottom,30px))" }}
         />
         <div style={{ background:C.panel, borderTop:`1px solid ${C.border}`, padding:"6px 18px", paddingBottom:"max(6px,env(safe-area-inset-bottom,6px))", fontSize:9, color:C.muted, textAlign:"right", letterSpacing:"0.1em", flexShrink:0 }}>
@@ -1953,8 +1953,8 @@ function CharacterArcSheet({ story, onUpdate, onClose, initialTab="characters" }
             <>
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
                 <div>
-                  <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:14, fontWeight:700, color:selectedArc?.color||C.amber, letterSpacing:"0.15em" }}>{selectedArc?.label}</div>
-                  <div style={{ fontSize:9, color:C.muted, letterSpacing:"0.08em", marginTop:2 }}>by {selectedArc?.author} · {selectedArc?.beats.length} beats</div>
+                  <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:14, fontWeight:700, color:selectedArc && selectedArc.color||C.amber, letterSpacing:"0.15em" }}>{selectedArc && selectedArc.label}</div>
+                  <div style={{ fontSize:9, color:C.muted, letterSpacing:"0.08em", marginTop:2 }}>by {selectedArc && selectedArc.author} · {selectedArc && selectedArc.beats.length} beats</div>
                 </div>
                 <button onClick={()=>saveStoryArc(null)}
                   style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:7, padding:"4px 9px", color:C.grey, fontSize:9, letterSpacing:"0.1em", cursor:"pointer" }}>
@@ -1962,7 +1962,7 @@ function CharacterArcSheet({ story, onUpdate, onClose, initialTab="characters" }
                 </button>
               </div>
               <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
-                {selectedArc?.beats.map((beat,i)=>{
+                {selectedArc && selectedArc.beats.map((beat,i)=>{
                   const key  = `${storyArcId}_${i}`;
                   const note = storyArcNotes[key]||"";
                   const words = note.split(/\s+/).filter(Boolean).length;
@@ -1984,7 +1984,7 @@ function CharacterArcSheet({ story, onUpdate, onClose, initialTab="characters" }
                 })}
               </div>
               {selectedArc && (()=>{
-                const filled = selectedArc.beats.filter((_,i)=>storyArcNotes[`${storyArcId}_${i}`]?.trim()).length;
+                const filled = selectedArc.beats.filter((_,i)=>storyArcNotes[`${storyArcId}_${i}`] && storyArcNotes[`${storyArcId}_${i}`].trim()).length;
                 const total  = selectedArc.beats.length;
                 return filled>0 ? (
                   <div style={{ marginTop:4 }}>
@@ -2047,8 +2047,8 @@ function DossierDetail({ story, onChange, onBack, onDelete }) {
     update({ sections:sections.filter(s=>s.id!==id) });
   };
 
-  const chapDone  = story.chapters?.filter(c=>c.done).length||0;
-  const chapTotal = story.chapters?.length||0;
+  const chapDone  = story.chapters && story.chapters.filter(c=>c.done).length||0;
+  const chapTotal = story.chapters && story.chapters.length||0;
   const statusColor = STATUS_COLORS[story.status]||C.grey;
   const totalWords = sections.reduce((acc,s)=>acc+(s.content||"").split(/\s+/).filter(Boolean).length,0);
 
@@ -2206,7 +2206,7 @@ function DossierDetail({ story, onChange, onBack, onDelete }) {
                 <div style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:13, fontWeight:700, color:story.storyArcId?C.blue:C.greyLight, letterSpacing:"0.2em" }}>STORY ARC</div>
                 {story.storyArcId ? (
                   <div style={{ fontSize:12, color:C.greyLight, marginTop:4, fontFamily:"'Special Elite',serif" }}>
-                    {STORY_ARCS.find(a=>a.id===story.storyArcId)?.label||"Arc selected"}
+                    {(STORY_ARCS.find(a=>a.id===story.storyArcId)||{label:"Arc selected"}).label}
                   </div>
                 ) : (
                   <div style={{ fontSize:11, color:C.muted, marginTop:4, fontStyle:"italic" }}>Tap to choose your story structure...</div>
@@ -2359,6 +2359,8 @@ function MainApp() {
       .then(ok => setSyncState(ok ? "synced" : "error"))
       .catch(() => setSyncState("error"));
   };
+
+  const handleNew = (opts={}) => {
     if (opts.prefill && opts.title) {
       addStory({
         title:opts.title, genre:"THRILLER", status:"ACTIVE OP", logline:"",
