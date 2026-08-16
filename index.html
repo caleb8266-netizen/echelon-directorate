@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-title" content="Operation Codex"/>
   <meta name="theme-color" content="#07090b"/>
   <title>Operation Codex</title>
-  <style>html, body { margin: 0; padding: 0; background: #07090b; }</style>
+  <style>html, body { margin: 0; padding: 0; background: #07090b; } body { padding-bottom: env(safe-area-inset-bottom, 0px); }</style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -638,13 +638,9 @@ function DossierList({ stories, onOpen, onNew, onDelete, syncState, onSync, stre
               {syncState==="synced"?"SYNCED":syncState==="syncing"?"SYNCING...":syncState==="error"?"OFFLINE — TAP":"LOCAL — TAP"}
             </span>
           </div>
-          <button onClick={exportAll}
-            style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:8, width:34, height:34, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:C.greyLight, fontSize:14, flexShrink:0 }}>
-            ↑
-          </button>
-          <button onClick={()=>{ setQuickCapture(v=>!v); setTimeout(()=>captureRef.current && captureRef.current.focus(),80); }}
-            style={{ background:quickCapture?C.amber:C.blue, border:"none", borderRadius:10, width:38, height:38, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", fontSize:22, color:C.bg, lineHeight:1, flexShrink:0 }}>
-            {quickCapture?"×":"+"}
+          <button onClick={()=>onNew()}
+            style={{ background:C.blue, border:"none", borderRadius:10, width:38, height:38, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", fontSize:22, color:C.bg, lineHeight:1, flexShrink:0 }}>
+            +
           </button>
         </div>
 
@@ -1887,16 +1883,21 @@ function CharacterArcSheet({ story, onUpdate, onClose, initialTab="characters" }
 
   // ── Main sheet ──
   return (
-    <BottomSheet title="CHARACTER ARCS" onClose={onClose}>
+    <div style={{ position:"absolute", inset:0, background:C.bg, zIndex:200, display:"flex", flexDirection:"column", animation:"fadeIn 0.2s ease both" }}>
+      <div style={{ background:C.panel, borderBottom:`1px solid ${C.borderBright}`, padding:"12px 20px", paddingTop:"max(12px,env(safe-area-inset-top,12px))", display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+        <span style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:14, fontWeight:700, letterSpacing:"0.25em", color:C.blue, flex:1 }}>CHARACTER ARCS</span>
+        <button onClick={onClose} style={{ background:"transparent", border:"none", color:C.grey, fontSize:24, cursor:"pointer", lineHeight:1, padding:"0 2px" }}>✕</button>
+      </div>
       {/* Tab switcher */}
-      <div style={{ display:"flex", marginBottom:16, background:"rgba(255,255,255,0.03)", borderRadius:10, padding:3 }}>
+      <div style={{ display:"flex", borderBottom:`1px solid ${C.border}`, flexShrink:0, background:C.panel }}>
         {[{id:"characters",label:"CHARACTERS"},{id:"story_arc",label:"STORY ARC"}].map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)}
-            style={{ flex:1, padding:"8px 0", background:tab===t.id?C.blueFaint:"transparent", border:`1px solid ${tab===t.id?C.blue:"transparent"}`, borderRadius:8, color:tab===t.id?C.blue:C.grey, fontSize:10, letterSpacing:"0.12em", cursor:"pointer", fontFamily:"'Rajdhani',sans-serif", fontWeight:700, transition:"all 0.15s" }}>
+            style={{ flex:1, padding:"10px 0", background:"transparent", border:"none", borderBottom:`2.5px solid ${tab===t.id?C.blue:"transparent"}`, color:tab===t.id?C.blue:C.grey, fontSize:10, letterSpacing:"0.15em", cursor:"pointer", fontFamily:"'Rajdhani',sans-serif", fontWeight:700, transition:"all 0.15s" }}>
             {t.label}
           </button>
         ))}
       </div>
+      <div style={{ flex:1, minHeight:0, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"16px 20px", paddingBottom:"max(24px,env(safe-area-inset-bottom,24px))" }}>
 
       {/* ── CHARACTERS TAB ── */}
       {tab==="characters" && (
@@ -2020,7 +2021,8 @@ function CharacterArcSheet({ story, onUpdate, onClose, initialTab="characters" }
           )}
         </div>
       )}
-    </BottomSheet>
+          </div>
+    </div>
   );
 }
 
