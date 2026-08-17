@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-title" content="Operation Codex"/>
   <meta name="theme-color" content="#07090b"/>
   <title>Operation Codex</title>
-  <style>html, body { margin: 0; padding: 0; background: #07090b; } body { padding-bottom: env(safe-area-inset-bottom, 0px); }</style>
+  <style>html, body { margin: 0; padding: 0; background: #07090b; height: 100%; } body { padding-bottom: env(safe-area-inset-bottom, 0px); } html { height: -webkit-fill-available; }</style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -69,6 +69,7 @@ const globalCSS = `
     width: 100%;
     max-width: 480px;
     height: 100vh;
+    height: 100dvh;
     height: -webkit-fill-available;
     display: flex;
     flex-direction: column;
@@ -458,6 +459,7 @@ function BootSequence({ onComplete }) {
               color:         line.startsWith("  WELCOME") ? C.white : line.startsWith("▸") ? C.blue : C.greyLight,
               fontFamily:    line.startsWith("  ") ? "'Rajdhani',sans-serif" : "'Share Tech Mono',monospace",
               fontWeight:    line.startsWith("  ") ? 600 : 400,
+              textAlign:     line.startsWith("  WELCOME") ? "center" : "left",
               fontSize:      line.startsWith("  ") ? 15 : 12,
               letterSpacing: line.startsWith("  ") ? "0.2em" : "0.04em",
             }}>
