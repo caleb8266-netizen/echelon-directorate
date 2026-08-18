@@ -68,10 +68,12 @@ const globalCSS = `
   #root {
     width: 100%;
     max-width: 480px;
-    height: 100vh;
-    height: calc(var(--vh, 1vh) * 100);
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    height: 100%;
     height: 100svh;
-    height: -webkit-fill-available;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -439,7 +441,7 @@ function BootSequence({ onComplete }) {
   }, [done]);
 
   return (
-    <div style={{ height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"32px 24px", paddingTop:"max(52px,calc(env(safe-area-inset-top,0px)+32px))", animation:"flicker 8s infinite", textAlign:"center" }}>
+    <div style={{ position:"fixed", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"32px 24px", paddingTop:"max(52px,calc(env(safe-area-inset-top,0px)+32px))", animation:"flicker 8s infinite", textAlign:"center", background:C.bg, zIndex:999 }}>
       <EDLogo size={60} color={C.silver} glow/>
       <h1 style={{ fontFamily:"'Rajdhani',sans-serif", fontSize:20, fontWeight:700, letterSpacing:"0.45em", color:C.amber, marginTop:14, marginBottom:4, textAlign:"center" }}>
         OPERATION CODEX
