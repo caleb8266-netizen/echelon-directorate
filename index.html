@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-title" content="Operation Codex"/>
   <meta name="theme-color" content="#07090b"/>
   <title>Operation Codex</title>
-  <style>html, body { margin: 0; padding: 0; background: #07090b; height: 100%; } body { padding-bottom: env(safe-area-inset-bottom, 0px); } html { height: -webkit-fill-available; }</style>
+  <style>html, body { margin: 0; padding: 0; background: #07090b !important; height: 100%; } body { padding-bottom: env(safe-area-inset-bottom, 0px); } html { height: -webkit-fill-available; }</style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -77,17 +77,18 @@ const globalCSS = `
     flex-direction: column;
     overflow: hidden;
     background: #07090b;
-    box-shadow: 0 0 80px rgba(0,0,0,0.8);
+    box-shadow: none;
   }
   /* Tablet — wider */
-  @media (min-width: 480px) {
+  /* Only show letterbox on actual desktop — not on iPhone */
+  @media (min-width: 768px) {
     body { background: #030506; }
-    #root { border-left: 1px solid ${C.border}; border-right: 1px solid ${C.border}; }
+    #root { border-left: 1px solid rgba(42,63,80,0.6); border-right: 1px solid rgba(42,63,80,0.6); }
   }
-  @media (min-width: 640px) {
+  @media (min-width: 768px) {
     #root { max-width: 600px; }
   }
-  /* Desktop — full width up to a generous max */
+  /* Desktop — full width */
   @media (min-width: 1024px) {
     #root { max-width: 100%; border-left: none; border-right: none; }
     body { background: ${C.bg}; font-size: 17px; }
@@ -699,8 +700,8 @@ function DossierList({ stories, onOpen, onNew, onDelete, syncState, onSync, stre
           const wordCount   = (s.content||"").split(/\s+/).filter(Boolean).length;
           const filterCSS   = (PHOTO_FILTERS.find(f=>f.id===s.coverFilter) || PHOTO_FILTERS[0]).css;
           return (
-            <div key={s.id} onClick={()=>onOpen(s.id)}
-              style={{ borderBottom:`1px solid ${C.border}`, cursor:"pointer", animation:`fadeUp 0.2s ease ${idx*0.04}s both`, overflow:"hidden" }}>
+            <div key={s.id} style={{ borderBottom:`1px solid ${C.border}`, animation:`fadeUp 0.2s ease ${idx*0.04}s both`, overflow:"hidden", position:"relative", display:"flex", alignItems:"stretch" }}>
+              <div onClick={()=>onOpen(s.id)} style={{ flex:1, cursor:"pointer", overflow:"hidden" }}>
               {s.coverImage && (
                 <div style={{ position:"relative", height:150, overflow:"hidden" }}>
                   <img src={s.coverImage} alt="Cover" style={{ width:"100%", height:"100%", objectFit:"cover", filter:filterCSS, display:"block" }}/>
@@ -725,6 +726,10 @@ function DossierList({ stories, onOpen, onNew, onDelete, syncState, onSync, stre
                     {!s.coverImage && <span style={{ fontSize:8, color:statusColor, letterSpacing:"0.12em", fontFamily:"'Rajdhani',sans-serif", fontWeight:600 }}>{s.status}</span>}
                     <span style={{ fontSize:8, color:C.muted }}>·</span>
                     <span style={{ fontSize:8, color:C.muted }}>{s.genre}</span>
+                    <button onClick={e=>{ e.stopPropagation(); if(window.confirm("Burn "+s.title+"?")) onDelete(s.id); }}
+                      style={{ marginLeft:"auto", background:"transparent", border:`1px solid ${C.red}55`, borderRadius:5, padding:"2px 8px", color:C.red, fontSize:8, letterSpacing:"0.1em", cursor:"pointer", fontFamily:"'Rajdhani',sans-serif", fontWeight:700 }}>
+                      BURN
+                    </button>
                     {wordCount>0 && <><span style={{ fontSize:8, color:C.muted }}>·</span><span style={{ fontSize:8, color:C.muted }}>{wordCount}w</span></>}
                     {(s.evidence||[]).length>0 && <><span style={{ fontSize:8, color:C.muted }}>·</span><span style={{ fontSize:8, color:C.amber }}>📎 {s.evidence.length}</span></>}
                   </div>
